@@ -1,8 +1,4 @@
-
-
-  const client = new MongoClient('localhost', 27017);
-  const db = client.db('my_database');
-  const manual_references_collection = db.collection('manual_references');
+import fetch from 'node-fetch';
 
 async function get_data_from_ref(ref_url) {
   // Check if the `$ref` is in the MongoDB Manual References collection.
@@ -18,6 +14,8 @@ async function get_data_from_ref(ref_url) {
 
     manual_reference = await manual_references_collection.findOne({ '$ref': ref_url });
   }
+
+  
 
   // Return the data from the MongoDB Manual References collection.
   return manual_reference['data'];
