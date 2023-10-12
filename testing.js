@@ -49,5 +49,15 @@ async function printNFLLeagueData(url, pages) {
   document.getElementById('json-output').innerHTML = combinedJsonString;
 }
 
+document.addEventListener('DOMContentLoaded', function() {
+  
+
+  const url = "https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/athletes?"
+  const pages = 2
+
+
+// Call the printNFLLeagueData() function.
+printNFLLeagueData(url, pages);
+});
 
 
