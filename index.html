@@ -1,22 +1,19 @@
 <!DOCTYPE html>
 <html>
 <head>
-<title>Test $ref Resolution</title>
+<title>NFL League Data</title>
 </head>
 <body>
-<h1>Test $ref Resolution</h1>
-
-<script src="get_all_ref_data.js"></script>
-
-<textarea id="json-output"></textarea>
-
 <script>
-// Get the JSON data from the get_all_ref_data() method.
-const resolved_json_data = await get_all_ref_data('https://example.com/api/users/12345');
 
-// Display the resolved JSON data in the textbox.
-document.getElementById('json-output').value = JSON.stringify(resolved_json_data, null, 4);
+    const url = "https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/athletes?"
+    const pages = 2
+
+
+// Call the printNFLLeagueData() function.
+printNFLLeagueData(url, pages);
 </script>
 
+<pre id="json-output"></pre>
 </body>
 </html>
