@@ -1,0 +1,14 @@
+body {
+    background-color: #6c757d !important;
+}
+
+.info-container-fluid {
+    max-width: 800px; /* set the maximum width */
+    max-height: 350px; /* set the maximum height */
+    overflow: auto; /* enable overflow scrolling */
+}
+
+.live-container-fluid {
+    max-height: 350px;
+    overflow: auto;
+}
