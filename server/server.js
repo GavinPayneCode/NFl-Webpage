@@ -5,7 +5,7 @@ const { MongoClient } = require("mongodb");
 const playerRouter = require("./routes/players");
 const gameRouter = require("./routes/games");
 const teamRouter = require("./routes/teams");
-
+//testing
 //setting variables for the server
 const app = express();
 const port = 8000;
