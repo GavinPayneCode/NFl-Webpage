@@ -55,7 +55,7 @@ router.route("/").get(async (req, res) => {
       await players
         .find(req.query.filter)
         .sort(req.query.sort)
-        .limit(60)
+        .limit(2000)
         .toArray()
     );
   } catch (err) {
