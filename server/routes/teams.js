@@ -5,13 +5,13 @@ const axios = require("axios");
 
 //base url needed to get the data
 const url =
-  "https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/teams?";
+  "https://sports.core.api.espn.com/v2/sports/football/leagues/college-football/teams?limit=1000";
 
 //function to get the data from the api
-async function getNFLLeagueData(url, page) {
-  if (page === undefined) page = 1;
-  const response = await axios.get(url + "page=" + page);
+async function getNFLLeagueData(url) {
+  const response = await axios.get(url);
   const jsonData = await response.data;
+  console.log("made it here");
   return jsonData;
 }
 
@@ -23,6 +23,7 @@ async function resolve_ref(ref_data) {
       const response = await axios.get(ref_data["$ref"]);
       ref_data["teamObject"] = await response.data;
       delete ref_data["$ref"];
+      console.log("here");
     } else if (typeof ref_data[i] === "object") {
       await resolve_ref(ref_data[i]);
     }
@@ -33,13 +34,11 @@ async function resolve_ref(ref_data) {
 //function that loops through all the pages of the api and returns the data
 async function allTeams(url) {
   let combinedJsonData = [];
-  for (let i = 1; i <= 2; i++) {
-    const jsonData = await getNFLLeagueData(url, i);
-    //jsonData.items is being passed into the resolve_ref function because the api gives us unwanted information
-    //so using the .items to only get the teams url is need to keep the variable clean
-    const resolvedJsonData = await resolve_ref(jsonData.items);
-    combinedJsonData = combinedJsonData.concat(resolvedJsonData);
-  }
+  const jsonData = await getNFLLeagueData(url);
+  //jsonData.items is being passed into the resolve_ref function because the api gives us unwanted information
+  //so using the .items to only get the teams url is need to keep the variable clean
+  const resolvedJsonData = await resolve_ref(jsonData.items);
+  combinedJsonData = combinedJsonData.concat(resolvedJsonData);
   return combinedJsonData;
 }
 
@@ -67,10 +66,11 @@ router.route("/").get(async (req, res) => {
 //unless the teams change a logo or name so instead of trying to update the teams in the database
 //when this is ran it just deletes all the teams and then reinserts them from the api
 router.route("/update").get(async (req, res) => {
+  console.log("updating teams");
   try {
     await teams.deleteMany({});
     await teams.insertMany(await allTeams(url));
-    res.json("teams updated");
+    res.json("testingg");
   } catch (err) {
     console.error(err);
     res.status(500).send("Internal server error");

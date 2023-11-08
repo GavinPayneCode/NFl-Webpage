@@ -3,14 +3,16 @@ const router = express.Router();
 const mongoose = require("mongoose");
 const axios = require("axios");
 
+let playerCount = 0;
+
 //base url needed to get the data
 const url =
-  "https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/athletes?";
+  "https://sports.core.api.espn.com/v2/sports/football/leagues/college-football/athletes?limit=1000";
 
 //function to get the data from the api
 async function getNFLLeagueData(url, page) {
   if (page === undefined) page = 1;
-  const response = await axios.get(url + "page=" + page);
+  const response = await axios.get(url + "&page=" + page);
   const jsonData = await response.data;
   return jsonData;
 }
@@ -20,6 +22,8 @@ async function getNFLLeagueData(url, page) {
 async function resolve_ref(ref_data) {
   for (const i in ref_data) {
     if (i === "$ref") {
+      playerCount++;
+      console.log("working on player: ", playerCount);
       const response = await axios.get(ref_data["$ref"]);
       ref_data["playerObject"] = await response.data;
       delete ref_data["$ref"];
@@ -34,10 +38,12 @@ async function resolve_ref(ref_data) {
 async function allPlayers(url, pages) {
   let combinedJsonData = [];
   for (let i = 1; i <= pages; i++) {
+    console.log("working on page: ", i);
     const jsonData = await getNFLLeagueData(url, i);
     const resolvedJsonData = await resolve_ref(jsonData.items);
     combinedJsonData = combinedJsonData.concat(resolvedJsonData);
   }
+  console.log("finished all pages returning data");
   return combinedJsonData;
 }
 
@@ -95,7 +101,9 @@ router.route("/stats/:id").get(async (req, res) => {
 router.route("/update").get(async (req, res) => {
   try {
     //there is 720 pages of 25 players each with there own api
-    const updatedPlayers = await allPlayers(url, 2);
+    const updatedPlayers = await allPlayers(url, 214);
+
+    console.log("starting bulk write");
 
     //this is a bulk write operation that will update the players in the database
     const bulkOps = updatedPlayers.map((player) => ({
@@ -106,6 +114,8 @@ router.route("/update").get(async (req, res) => {
       },
     }));
     await players.bulkWrite(bulkOps);
+
+    console.log("finished bulk write");
 
     res.json("players have been updated");
   } catch (err) {

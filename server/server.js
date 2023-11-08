@@ -22,10 +22,10 @@ async function connectToDatabase() {
       useNewUrlParser: true,
       useUnifiedTopology: true,
     });
-    console.log("Connected to database");
+    console.log("Connected to databasess");
 
-    //connecting to the NFL_Data database
-    const db = client.db("NFL_Data");
+    //connecting to the NCAAF_Data database
+    const db = client.db("NCAAF_Data");
 
     //returning the connection to the database
     return db;
