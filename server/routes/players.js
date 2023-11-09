@@ -124,6 +124,19 @@ router.route("/update").get(async (req, res) => {
   }
 });
 
+router.route("/testing").get(async (req, res) => {
+  try {
+    res.json(
+      await players
+        .find({}, { projection: { "playerObject.firstName": 1, _id: 0 } })
+        .toArray()
+    );
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("Internal server error");
+  }
+});
+
 //route for deleting all the players in the database
 router.route("/deleteAll").get(async (req, res) => {
   try {
