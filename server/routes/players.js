@@ -139,7 +139,6 @@ router.route("/updateSEC").get(async (req, res) => {
               if (playerElements.length === 0) return players;
 
               for (const element of playerElements) {
-                try {
                   const cells = element.querySelectorAll("td");
                   const playerFullName = cells[1].innerText;
                   const PlayerHomeTown = cells[6].innerText;
@@ -154,9 +153,6 @@ router.route("/updateSEC").get(async (req, res) => {
                     lastPlayedYear: year,
                     sport: name,
                   });
-                } catch (err) {
-                  break;
-                }
               }
 
               return players;
