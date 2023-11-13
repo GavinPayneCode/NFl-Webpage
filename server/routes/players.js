@@ -3,49 +3,9 @@ const router = express.Router();
 const mongoose = require("mongoose");
 const axios = require("axios");
 
-let playerCount = 0;
-
 //base url needed to get the data
 const url =
-  "https://sports.core.api.espn.com/v2/sports/football/leagues/college-football/athletes?limit=1000";
-
-//function to get the data from the api
-async function getNFLLeagueData(url, page) {
-  if (page === undefined) page = 1;
-  const response = await axios.get(url + "&page=" + page);
-  const jsonData = await response.data;
-  return jsonData;
-}
-
-//function that loops through the json looking for api's in the properties of $ref
-//then runs the api and replaces the $ref with the data from the api
-async function resolve_ref(ref_data) {
-  for (const i in ref_data) {
-    if (i === "$ref") {
-      playerCount++;
-      console.log("working on player: ", playerCount);
-      const response = await axios.get(ref_data["$ref"]);
-      ref_data["playerObject"] = await response.data;
-      delete ref_data["$ref"];
-    } else if (typeof ref_data[i] === "object") {
-      await resolve_ref(ref_data[i]);
-    }
-  }
-  return ref_data;
-}
-
-//function that loops through all the pages of the api and returns the data
-async function allPlayers(url, pages) {
-  let combinedJsonData = [];
-  for (let i = 1; i <= pages; i++) {
-    console.log("working on page: ", i);
-    const jsonData = await getNFLLeagueData(url, i);
-    const resolvedJsonData = await resolve_ref(jsonData.items);
-    combinedJsonData = combinedJsonData.concat(resolvedJsonData);
-  }
-  console.log("finished all pages returning data");
-  return combinedJsonData;
-}
+  "https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/athletes?";
 
 //base route for the database connection to get pass through
 //then connects to the players collection
@@ -93,59 +53,19 @@ router.route("/stats/:id").get(async (req, res) => {
   }
 });
 
-//route for updating the players in the database
-//will rerun the api call and check to see if the player is already in the database
-//if a player is already in the dataabse there information will be updated
-//if a player is not in the database they will be added to the database
-//this is usefull to run at the start of each new season
 router.route("/update").get(async (req, res) => {
-  try {
-    //there is 720 pages of 25 players each with there own api
-    const updatedPlayers = await allPlayers(url, 214);
-
-    console.log("starting bulk write");
-
-    //this is a bulk write operation that will update the players in the database
-    const bulkOps = updatedPlayers.map((player) => ({
-      updateOne: {
-        filter: { "playerObject.id": player["playerObject"]["id"] },
-        update: { $set: { playerObject: player["playerObject"] } },
-        upsert: true,
-      },
-    }));
-    await players.bulkWrite(bulkOps);
-
-    console.log("finished bulk write");
-
-    res.json("players have been updated");
-  } catch (err) {
-    console.error(err);
-    res.status(500).send("Internal server error");
-  }
-});
-
-router.route("/testing").get(async (req, res) => {
-  try {
-    res.json(
-      await players
-        .find({}, { projection: { "playerObject.firstName": 1, _id: 0 } })
-        .toArray()
+  allPlayerData = [];
+  for (let i = 1; i <= 2; i++) {
+    playerData = await axios.get(
+      "https://sports.core.api.espn.com/v3/sports/football/college-football/athletes?limit=1000&page=" +
+        i
     );
-  } catch (err) {
-    console.error(err);
-    res.status(500).send("Internal server error");
+    allPlayerData = allPlayerData.concat(playerData.data.items);
   }
-});
+  players.deleteMany({});
+  players.insertMany(allPlayerData);
 
-//route for deleting all the players in the database
-router.route("/deleteAll").get(async (req, res) => {
-  try {
-    players.deleteMany({});
-    res.json({ message: "All players deleted" });
-  } catch (err) {
-    console.error(err);
-    res.status(500).send("Internal server error");
-  }
+  res.json("players have been updated with new method");
 });
 
 module.exports = router;
