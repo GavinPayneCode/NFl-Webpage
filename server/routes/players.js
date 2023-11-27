@@ -3,6 +3,8 @@ const router = express.Router();
 const mongoose = require("mongoose");
 const axios = require("axios");
 const puppeteer = require("puppeteer");
+const fs = require("fs");
+const { start } = require("repl");
 
 //base url needed to get the data
 const url =
@@ -21,10 +23,8 @@ router.route("/").get(async (req, res) => {
     const playersData = await players
       .find(
         { fullName: { $exists: true } },
-        { projection: { _id: 0, fullName: 1, id: 1 } }
+        { projection: { _id: 0, fullName: 1, id: 1, $ref: 1 } }
       )
-      .skip(10000)
-      .limit(1000)
       .toArray();
     res.send(playersData);
   } catch (err) {
@@ -68,27 +68,16 @@ router.route("/updateStats").get(async (req, res) => {
   }
 });
 
-router.route("/updateSEC").get(async (req, res) => {
-  try {
-    const browser = await puppeteer.launch({ headless: false });
-    const page = await browser.newPage();
+///document.querySelector("#menu-bordeaux-menu > li:nth-child(1) > div > div > div > ul > li:nth-child(1)")
 
-    await page.setRequestInterception(true);
-    page.on("request", (req) => {
-      if (
-        req.resourceType() == "stylesheet" ||
-        req.resourceType() == "font" ||
-        req.resourceType() == "image"
-      ) {
-        req.abort();
-      } else {
-        req.continue();
-      }
-    });
-    //document.querySelector("#menu-bordeaux-menu > li:nth-child(1) > div > div > div > ul > li:nth-child(1) > ul")
+router.route("/updateArkansas").get(async (req, res) => {
+  try {
+    const browser = await puppeteer.launch({ headless: "new" });
+
+    const page = await browser.newPage();
     await page.goto("https://arkansasrazorbacks.com/sport/m-footbl/roster/");
 
-    const sportsURL = await page.evaluate(() => {
+    const sportsURL = await page.evaluate(async () => {
       const sportURLs = Array.from(
         document.querySelectorAll(
           "#menu-bordeaux-menu > li:nth-child(1) > div > div > div > ul > li"
@@ -97,117 +86,327 @@ router.route("/updateSEC").get(async (req, res) => {
       allSports = [];
       sportURLs.forEach((sport) => {
         const sportName = sport.querySelector("a").innerText.trim();
-        const sportURL = sport.querySelector("ul > li:nth-child(2) > a").href;
+        let sportURL = sport.querySelector("ul > li:nth-child(2) > a").href;
+
+        // Check if the URL ends with 'roster'. If not, append it.
+        if (!sportURL.endsWith("roster/")) {
+          sportURL += "roster/";
+        }
+
         allSports.push({ name: sportName, url: sportURL });
       });
       return allSports;
     });
+    page.close();
 
-    // Get all years from the dropdown
-    const yearsURL = await page.evaluate(() => {
-      const yearOptions = Array.from(
-        document.querySelector(
-          "#wrapper > section > div.container > div:nth-child(1) > div > ul > li.pull-right > select"
-        ).options
-      );
-      allYears = [];
-      yearOptions.forEach((option) => {
-        allYears.push({ year: option.innerText, url: option.value });
-      });
-      return allYears;
-    });
+    allYears = [];
 
-    let allPlayerData = [];
+    for (let i = 0; i < sportsURL.length - 1; i++) {
+      const page = await browser.newPage();
+      await page.goto(sportsURL[i].url);
 
-    // Start scraping for each sport
-    const sportPromises = sportsURL.map(async (sport) => {
-      // Start scraping for each year in parallel
-      const yearPromises = yearsURL.map(async (yearURL) => {
-        const page = await browser.newPage();
-
+      const years = await page.evaluate(async () => {
         try {
-          await page.goto(sport.url + "?season=" + yearURL.year);
-          console.log(sport.url + "?season=" + yearURL.year);
-
-          const playerData = await page.evaluate(
-            ({ year }, { name }) => {
-              const players = [];
-              const playerElements = document.querySelectorAll(
-                "#roster > div > div > div > div > table > tbody > tr"
-              );
-
-              if (playerElements.length === 0) return players;
-
-              for (const element of playerElements) {
-                  const cells = element.querySelectorAll("td");
-                  const playerFullName = cells[1].innerText;
-                  const PlayerHomeTown = cells[6].innerText;
-                  const playerHighSchool = cells[7].innerText
-                    .split("/")[0]
-                    .trim();
-
-                  players.push({
-                    fullName: playerFullName,
-                    hometown: PlayerHomeTown,
-                    highSchool: playerHighSchool,
-                    lastPlayedYear: year,
-                    sport: name,
-                  });
-              }
-
-              return players;
-            },
-            yearURL,
-            sport
+          const year = Array.from(
+            document.querySelector(
+              "#wrapper > section > div.container > div:nth-child(1) > div > ul > li.pull-right > select"
+            ).options
           );
-
-          await page.close();
-
-          return playerData;
+          if (year.length === 0)
+            return [{ number: "problems", url: "problems" }];
+          allYears = [];
+          year.forEach((option) => {
+            allYears.push({ number: option.innerText, url: option.value });
+          });
+          return allYears;
         } catch (err) {
-          console.error(err);
+          console.log("Porblem: " + page.url());
+          console.log("Sports: " + sportsURL[i].url);
         }
       });
+      allYears = allYears.concat(await years);
+      page.close();
+    }
 
-      // Wait for all year promises to resolve
-      const results = await Promise.all(yearPromises);
+    allPlayers = [];
 
-      // Flatten the results array
-      allPlayerData = allPlayerData.concat(...results);
+    for (let i = 0; i < allYears.length - 1; i++) {
+      const page = await browser.newPage();
+      await page.goto(allYears[i].url);
 
-      return allPlayerData;
+      const players = await page.evaluate(async () => {
+        const rowElements = document.querySelectorAll(
+          "#DataTables_Table_0 > tbody > tr"
+        );
+
+        const headerElements = document.querySelectorAll(
+          "#DataTables_Table_0 > thead > tr"
+        );
+
+        allHeaders = [];
+        headerElements.forEach((header) => {
+          const headers = header.querySelectorAll("th");
+          headers.forEach((header) => {
+            allHeaders.push(header.innerText);
+          });
+        });
+
+        // Create a new Set to store player identifiers
+        const playerSet = new Set();
+
+        allCells = [];
+        rowElements.forEach((row) => {
+          const cells = row.querySelectorAll("td");
+          let playerData = {};
+          cells.forEach((cell, index) => {
+            playerData[allHeaders[index].trim()] = cell.innerText.trim();
+          });
+
+          allCells.push(playerData);
+        });
+        return allCells;
+      });
+
+      allPlayers = allPlayers.concat(players);
+      page.close();
+    }
+
+    // Create a new Set to store player identifiers
+    const playerSet = new Set();
+    allPlayers = allPlayers.filter((player) => {
+      const playerId = player.Name + "-" + player.Hometown;
+      if (!playerSet.has(playerId)) {
+        playerSet.add(playerId);
+        return true;
+      }
+      return false;
     });
+    browser.close();
 
-    // Wait for all sport promises to resolve
-    const sportResults = await Promise.all(sportPromises);
+    arkansasPlayers = req.db.collection("Arkansas");
+    await arkansasPlayers.deleteMany({});
+    await arkansasPlayers.insertMany(allPlayers);
 
-    // Flatten the sportResults array
-    allPlayerData = sportResults.flat();
-
-    await browser.close();
-
-    res.json(allPlayerData);
+    res.json("updated arkansas players");
   } catch (err) {
     console.error(err);
-    res.json({ message: "error" });
+    res.status(500).send("Internal server error");
+  }
+});
+
+router.route("/updateAlabama").get(async (req, res) => {
+  try {
+    const browser = await puppeteer.launch({ headless: false });
+
+    const page = await browser.newPage();
+    await page.setViewport({ width: 1280, height: 800 });
+    await page.goto("https://rolltide.com");
+
+    const sportsURL = await page.evaluate(async () => {
+      const sportGroups = Array.from(
+        document.querySelectorAll(
+          "#aspnetForm > header > div > div > div > nav > navigation-component > div > div.c-navigation-desktop.flex-item-1 > ul > li.main-navigation-sports.c-navigation__item.c-navigation__item--level-1.c-navigation__parent.sidearm-haspopup > div > div > div.flex > ul"
+        )
+      );
+      const allSports = [];
+
+      sportGroups.forEach((group) => {
+        const sports = Array.from(
+          group.querySelectorAll(
+            "li > a.c-navigation__url.c-navigation__url--level-2.c-navigation__schedule-roster-news.roster"
+          )
+        );
+
+        sports.forEach((sport) => {
+          allSports.push({ url: sport.href });
+        });
+      });
+
+      return allSports;
+    });
+
+    console.log(sportsURL);
+    page.close();
+
+    const allYears = [];
+    const yearPromises = sportsURL.map(async (sport, i) => {
+      const page = await browser.newPage();
+      await page.goto(sport.url);
+
+      const years = await page.evaluate(() => {
+        try {
+          const year = Array.from(
+            document.querySelector("#ddl_past_rosters").options
+          );
+          if (year.length === 0)
+            return [{ number: "problems", url: "problems" }];
+          allYears = [];
+          year.forEach((option) => {
+            allYears.push({ number: option.innerText, url: option.value });
+          });
+          return allYears;
+        } catch (err) {
+          console.log("Porblem: " + page.url());
+          console.log("Sports: " + sportsURL[i].url);
+        }
+      });
+      allYears.push(...years);
+      page.close();
+    });
+
+    await Promise.all(yearPromises);
+
+    const allPlayers = [];
+    const playerPromises = allYears.map(async (year, i) => {
+      const page = await browser.newPage();
+      await page.goto("https://rolltide.com/" + year.url + "?view=2");
+
+      const players = await page.evaluate(() => {
+        const rowElements = document.querySelectorAll(
+          "#DataTables_Table_0 > tbody > tr"
+        );
+
+        const headerElements = document.querySelectorAll(
+          "#DataTables_Table_0 > thead > tr"
+        );
+
+        allHeaders = [];
+        headerElements.forEach((header) => {
+          const headers = header.querySelectorAll("th");
+          headers.forEach((header) => {
+            allHeaders.push(header.innerText);
+          });
+        });
+
+        // Create a new Set to store player identifiers
+        const playerSet = new Set();
+
+        allCells = [];
+        rowElements.forEach((row) => {
+          const cells = row.querySelectorAll("td");
+          let playerData = {};
+          cells.forEach((cell, index) => {
+            playerData[allHeaders[index].trim()] = cell.innerText.trim();
+          });
+
+          allCells.push(playerData);
+        });
+        return allCells;
+      });
+
+      allPlayers.push(...players);
+      page.close();
+    });
+
+    await Promise.all(playerPromises);
+
+    // Create a new Set to store player identifiers
+    const playerSet = new Set();
+    let noHometownCount = 0;
+
+    allPlayers = allPlayers.filter((player) => {
+      let playerId;
+      if (player["HOMETOWN / HIGH SCHOOL"]) {
+        const hometownHighSchool = player["HOMETOWN / HIGH SCHOOL"].split("/");
+        const hometown = hometownHighSchool[0].trim();
+        const highSchool = hometownHighSchool[1]
+          ? hometownHighSchool[1].trim()
+          : "";
+        playerId = player["FULL NAME"] + "-" + highSchool;
+      } else {
+        noHometownCount++;
+        console.log(`No hometown count: ${noHometownCount}`);
+        playerId = player["FULL NAME"] + "-" + player["#"];
+      }
+      if (!playerSet.has(playerId)) {
+        playerSet.add(playerId);
+        return true;
+      }
+      return false;
+    });
+    browser.close();
+
+    res.json(allPlayers);
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("Internal server error");
   }
 });
 
 router.route("/update").get(async (req, res) => {
   allPlayerData = [];
-  page = 1;
-  for (let i = 1; i <= 214; i++) {
-    playerData = await axios.get(
-      "https://sports.core.api.espn.com/v3/sports/football/college-football/athletes?limit=1000&page=" +
-        i
-    );
-    allPlayerData = allPlayerData.concat(playerData.data.items);
-    console.log("Finished page: ", i);
-  }
-  players.deleteMany({});
-  players.insertMany(allPlayerData);
+  totalPlayers = 0;
+  urlList = [
+    "http://sports.core.api.espn.com/v2/sports/baseball/leagues/college-baseball/seasons/",
+    "http://sports.core.api.espn.com/v2/sports/baseball/leagues/college-softball/seasons/",
+    "http://sports.core.api.espn.com/v2/sports/basketball/leagues/mens-college-basketball/seasons/",
+    "http://sports.core.api.espn.com/v2/sports/basketball/leagues/womens-college-basketball/seasons/",
+    "http://sports.core.api.espn.com/v2/sports/soccer/leagues/usa.ncaa.m.1/seasons/",
+    "http://sports.core.api.espn.com/v2/sports/soccer/leagues/usa.ncaa.w.1/seasons/",
+    "http://sports.core.api.espn.com/v2/sports/volleyball/leagues/mens-college-volleyball/seasons/",
+    "http://sports.core.api.espn.com/v2/sports/volleyball/leagues/womens-college-volleyball/seasons/",
+    "http://sports.core.api.espn.com/v2/sports/football/leagues/college-football/seasons/",
+  ];
 
-  res.json("players have been updated");
+  teamIDList = [2, 8, 99, 145, 245, 333, 344, 57, 61, 96, 142, 238, 2579, 2633];
+
+  let idSet = new Set();
+
+  for (let teamID of teamIDList) {
+    let promises = []; // Array to hold all promises
+
+    for (let baseUrl of urlList) {
+      for (let i = 2024; i > 2009; i--) {
+        const url = baseUrl + i + "/teams/" + teamID + "/athletes?limit=1000";
+
+        // Push the promise into the array
+        promises.push(
+          axios
+            .get(url)
+            .then(async (data) => {
+              totalPlayers += data.data.items.length;
+
+              // Create an array to hold the promises for the additional requests
+              let playerPromises = [];
+
+              data.data.items.forEach((player) => {
+                let parts = player.$ref.split("/");
+                let id = parts[parts.length - 1].split("?")[0];
+
+                if (!idSet.has(id)) {
+                  // Push the promise into the array and add a catch block
+                  playerPromises.push(
+                    axios.get(player.$ref).catch((err) => {
+                      console.log(`Error on link: ${player.$ref}`, err);
+                      return null; // Return null if there's an error
+                    })
+                  );
+                  idSet.add(id);
+                }
+              });
+
+              // Wait for all promises to resolve and add the results to allPlayerData
+              let playerData = await Promise.all(playerPromises);
+              playerData = playerData.map((response) =>
+                response ? response.data : null
+              );
+              allPlayerData.push(...playerData.filter((data) => data !== null));
+
+              console.log("got data from: " + url);
+            })
+            .catch((err) => {
+              console.log("Error: " + err + " on link: " + url);
+            })
+        );
+      }
+    }
+
+    // Wait for all promises to resolve
+    await Promise.all(promises);
+  }
+  await players.deleteMany({});
+  await players.insertMany(allPlayerData);
+  res.json(allPlayerData);
 });
 
 module.exports = router;
