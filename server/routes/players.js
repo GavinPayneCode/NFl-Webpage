@@ -6,6 +6,13 @@ const puppeteer = require("puppeteer");
 const fs = require("fs");
 const { start } = require("repl");
 
+let pLimit;
+
+// Dynamically import p-limit
+import('p-limit').then((module) => {
+  pLimit = module.default;
+});
+
 //base url needed to get the data
 const url =
   "https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/athletes?";
@@ -68,7 +75,7 @@ router.route("/updateStats").get(async (req, res) => {
   }
 });
 
-///document.querySelector("#menu-bordeaux-menu > li:nth-child(1) > div > div > div > ul > li:nth-child(1)")
+
 
 router.route("/updateArkansas").get(async (req, res) => {
   try {
@@ -196,7 +203,7 @@ router.route("/updateArkansas").get(async (req, res) => {
 
 router.route("/updateAlabama").get(async (req, res) => {
   try {
-    const browser = await puppeteer.launch({ headless: false });
+    const browser = await puppeteer.launch({ headless: "new" });
 
     const page = await browser.newPage();
     await page.setViewport({ width: 1280, height: 800 });
@@ -229,7 +236,11 @@ router.route("/updateAlabama").get(async (req, res) => {
     page.close();
 
     const allYears = [];
-    const yearPromises = sportsURL.map(async (sport, i) => {
+
+
+    const limit = pLimit(5); // Limit to 5 concurrent tabs
+
+    const yearPromises = sportsURL.map((sport, i) => limit(async () => {
       const page = await browser.newPage();
       await page.goto(sport.url);
 
@@ -246,18 +257,20 @@ router.route("/updateAlabama").get(async (req, res) => {
           });
           return allYears;
         } catch (err) {
-          console.log("Porblem: " + page.url());
-          console.log("Sports: " + sportsURL[i].url);
+          console.log("Sports: ");
         }
       });
-      allYears.push(...years);
+      try {
+        allYears.push(...years);
+      } catch (err) {
+        console.log("Sports: " + sport.url);
+      }
       page.close();
-    });
+    }));
 
     await Promise.all(yearPromises);
 
-    const allPlayers = [];
-    const playerPromises = allYears.map(async (year, i) => {
+    const playerPromises = allYears.map((year, i) => limit(async () => {
       const page = await browser.newPage();
       await page.goto("https://rolltide.com/" + year.url + "?view=2");
 
@@ -296,7 +309,7 @@ router.route("/updateAlabama").get(async (req, res) => {
 
       allPlayers.push(...players);
       page.close();
-    });
+    }));
 
     await Promise.all(playerPromises);
 
