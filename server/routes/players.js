@@ -8,6 +8,7 @@ const { start } = require("repl");
 const xml2js = require("xml2js");
 const { get } = require("http");
 const cheerio = require("cheerio");
+const Bottleneck = require('bottleneck');
 
 let pLimit;
 
@@ -448,8 +449,30 @@ async function getPlayerURLS(url) {
     });
 }
 
+// Create a new limiter with a maximum of 2 concurrent requests
+const limiter = new Bottleneck({ maxConcurrent: 50 });
+
+const delay = ms => new Promise(res => setTimeout(res, ms));
+
 async function getPlayerData(url, index, total) {
-  const response = await axios.get(url);
+  let response;
+
+while (true) {
+  try {
+    response = await limiter.schedule(() => axios.get(url));
+    break; // If the request was successful, break the loop
+  } catch (error) {
+    if (error.response && (error.response.status === 500)) {
+      console.log(`Retrying ${url} in 10 seconds...`);
+      await delay(10000); // Wait for 10 seconds before retrying
+    } else {
+      message = `Failed to fetch ${url}: ${error.response.status}`
+      console.log(message);
+      return null;
+    }
+  }
+}
+
   const $ = cheerio.load(response.data);
   const playerData = {};
   photos = [];
@@ -514,7 +537,11 @@ router.route("/updateAuburn").get(async (req, res) => {
     const playersDataPromises = playerURLS.map((url, index) =>
       getPlayerData(url, index, playerURLS.length)
     );
-    const playersData = await Promise.all(playersDataPromises);
+    playersData = await Promise.all(playersDataPromises);
+
+    // Remove any null values from the array
+    playersData = playersData.filter((data) => data !== null);
+
     res.json(playersData);
   } catch (error) {
     console.error(error);
