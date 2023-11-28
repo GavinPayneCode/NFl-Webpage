@@ -5,11 +5,14 @@ const axios = require("axios");
 const puppeteer = require("puppeteer");
 const fs = require("fs");
 const { start } = require("repl");
+const xml2js = require("xml2js");
+const { get } = require("http");
+const cheerio = require("cheerio");
 
 let pLimit;
 
 // Dynamically import p-limit
-import('p-limit').then((module) => {
+import("p-limit").then((module) => {
   pLimit = module.default;
 });
 
@@ -74,8 +77,6 @@ router.route("/updateStats").get(async (req, res) => {
     res.json({ message: "No stats for this player" });
   }
 });
-
-
 
 router.route("/updateArkansas").get(async (req, res) => {
   try {
@@ -232,116 +233,291 @@ router.route("/updateAlabama").get(async (req, res) => {
       return allSports;
     });
 
+    sportsURL.pop();
+
     console.log(sportsURL);
+
     page.close();
 
     const allYears = [];
 
+    const limit = pLimit(6); // Limit to 6 concurrent tabs
 
-    const limit = pLimit(5); // Limit to 5 concurrent tabs
+    const yearPromises = sportsURL.map((sport, i) =>
+      limit(async () => {
+        const page = await browser.newPage();
+        await page.goto(sport.url);
 
-    const yearPromises = sportsURL.map((sport, i) => limit(async () => {
-      const page = await browser.newPage();
-      await page.goto(sport.url);
-
-      const years = await page.evaluate(() => {
+        const years = await page.evaluate(() => {
+          try {
+            const year = Array.from(
+              document.querySelector("#ddl_past_rosters").options
+            );
+            if (year.length === 0)
+              return [{ number: "problems", url: "problems" }];
+            allYears = [];
+            year.forEach((option) => {
+              allYears.push({ number: option.innerText, url: option.value });
+            });
+            return allYears;
+          } catch (err) {
+            console.log("Sports: ");
+          }
+        });
+        page.close();
         try {
-          const year = Array.from(
-            document.querySelector("#ddl_past_rosters").options
-          );
-          if (year.length === 0)
-            return [{ number: "problems", url: "problems" }];
-          allYears = [];
-          year.forEach((option) => {
-            allYears.push({ number: option.innerText, url: option.value });
-          });
-          return allYears;
+          allYears.push(...years);
         } catch (err) {
-          console.log("Sports: ");
+          console.log("Sports: " + sport.url);
         }
-      });
-      try {
-        allYears.push(...years);
-      } catch (err) {
-        console.log("Sports: " + sport.url);
-      }
-      page.close();
-    }));
+      })
+    );
+
+    let allPlayers = [];
 
     await Promise.all(yearPromises);
 
-    const playerPromises = allYears.map((year, i) => limit(async () => {
-      const page = await browser.newPage();
-      await page.goto("https://rolltide.com/" + year.url + "?view=2");
+    const playerPromises = allYears.map((year, i) =>
+      limit(async () => {
+        const page = await browser.newPage();
+        await page.goto("https://rolltide.com/" + year.url + "?view=2");
 
-      const players = await page.evaluate(() => {
-        const rowElements = document.querySelectorAll(
-          "#DataTables_Table_0 > tbody > tr"
-        );
+        const players = await page.evaluate(() => {
+          const rowElements = document.querySelectorAll(
+            "#DataTables_Table_0 > tbody > tr"
+          );
 
-        const headerElements = document.querySelectorAll(
-          "#DataTables_Table_0 > thead > tr"
-        );
+          const headerElements = document.querySelectorAll(
+            "#DataTables_Table_0 > thead > tr"
+          );
 
-        allHeaders = [];
-        headerElements.forEach((header) => {
-          const headers = header.querySelectorAll("th");
-          headers.forEach((header) => {
-            allHeaders.push(header.innerText);
-          });
-        });
-
-        // Create a new Set to store player identifiers
-        const playerSet = new Set();
-
-        allCells = [];
-        rowElements.forEach((row) => {
-          const cells = row.querySelectorAll("td");
-          let playerData = {};
-          cells.forEach((cell, index) => {
-            playerData[allHeaders[index].trim()] = cell.innerText.trim();
+          allHeaders = [];
+          headerElements.forEach((header) => {
+            const headers = header.querySelectorAll("th");
+            headers.forEach((header) => {
+              allHeaders.push(header.innerText);
+            });
           });
 
-          allCells.push(playerData);
-        });
-        return allCells;
-      });
+          // Create a new Set to store player identifiers
+          const playerSet = new Set();
 
-      allPlayers.push(...players);
-      page.close();
-    }));
+          allCells = [];
+          rowElements.forEach((row) => {
+            const cells = row.querySelectorAll("td");
+            let playerData = {};
+            cells.forEach((cell, index) => {
+              playerData[allHeaders[index].trim()] = cell.innerText.trim();
+            });
+
+            allCells.push(playerData);
+          });
+          return allCells;
+        });
+        page.close();
+        allPlayers.push(...players);
+      })
+    );
 
     await Promise.all(playerPromises);
 
-    // Create a new Set to store player identifiers
+    // This code will run after all the promises have completed
     const playerSet = new Set();
-    let noHometownCount = 0;
+    let noHighSchoolCount = 0;
 
     allPlayers = allPlayers.filter((player) => {
       let playerId;
+
+      // Determine the high school
+      let highSchool = "";
+      let homeTownCity = "";
+      let homeTownStateOrCountry = "";
       if (player["HOMETOWN / HIGH SCHOOL"]) {
         const hometownHighSchool = player["HOMETOWN / HIGH SCHOOL"].split("/");
-        const hometown = hometownHighSchool[0].trim();
-        const highSchool = hometownHighSchool[1]
-          ? hometownHighSchool[1].trim()
-          : "";
-        playerId = player["FULL NAME"] + "-" + highSchool;
+        highSchool = hometownHighSchool[1] ? hometownHighSchool[1].trim() : "";
+        if (hometownHighSchool[0].includes(",")) {
+          homeTown = hometownHighSchool[0].split(",");
+          homeTownCity = homeTown[0].trim();
+          homeTownStateOrCountry = homeTown[1].trim();
+        }
+        if (highSchool === "") {
+          highSchool = hometownHighSchool[0].split(",")[0].trim();
+        }
+      } else if (
+        player["PREVIOUS SCHOOL"] &&
+        player["PREVIOUS SCHOOL"].includes("HS")
+      ) {
+        highSchool = player["PREVIOUS SCHOOL"];
+        if (player["HOMETOWN"]) {
+          homeTown = player["HOMETOWN"].split(",");
+          homeTownCity = homeTown[0].trim();
+          homeTownStateOrCountry = homeTown[1].trim();
+        }
+      } else if (
+        player["PREVIOUS SCHOOL"] ||
+        player["PREVIOUS SCHOOL"] === ""
+      ) {
+        hometown = player["HOMETOWN"].split(",");
+        homeTownCity = hometown[0].trim();
+        homeTownStateOrCountry = hometown[1].trim();
+        highSchool = `${homeTownCity} High School`;
+      } else if (
+        player["HOMETOWN / PREVIOUS SCHOOL"] ||
+        player["HOMETOWN/PREVIOUS SCHOOL"]
+      ) {
+        if (player["HOMETOWN / PREVIOUS SCHOOL"]) {
+          hometownPrevSchool = player["HOMETOWN / PREVIOUS SCHOOL"].split("/");
+        } else {
+          hometownPrevSchool = player["HOMETOWN/PREVIOUS SCHOOL"].split("/");
+        }
+        if (hometownPrevSchool[0].includes(",")) {
+          homeTown = hometownPrevSchool[0].split(",");
+          homeTownCity = homeTown[0].trim();
+          homeTownStateOrCountry = homeTown[1].trim();
+        }
+        if (hometownPrevSchool[1] && hometownPrevSchool[1].includes("HS")) {
+          highSchool = hometownPrevSchool[1].trim();
+        } else {
+          const hometown = hometownPrevSchool[0].split(",")[0].trim();
+          highSchool = `${hometown} High School`;
+        }
       } else {
-        noHometownCount++;
-        console.log(`No hometown count: ${noHometownCount}`);
-        playerId = player["FULL NAME"] + "-" + player["#"];
+        noHighSchoolCount++;
+        console.log(
+          player["FULL NAME"] +
+            " has no high school. " +
+            `No high school count: ${noHighSchoolCount}`
+        );
       }
+
+      // Add the high school to the player object
+      player["High-School"] = highSchool;
+      player["Home-Town-City"] = homeTownCity;
+      player["Home-Town-State/Country"] = homeTownStateOrCountry;
+
+      // Use FULL NAME - Home Town as the ID
+      playerId = player["FULL NAME"] + "-" + homeTownCity;
+
       if (!playerSet.has(playerId)) {
         playerSet.add(playerId);
         return true;
       }
       return false;
     });
-    browser.close();
 
-    res.json(allPlayers);
+    browser.close();
+    alabamaPlayers = req.db.collection("Alabama");
+    await alabamaPlayers.deleteMany({});
+    await alabamaPlayers.insertMany(allPlayers);
+
+    res.json("updated Alabama players");
   } catch (err) {
     console.error(err);
+    res.status(500).send("Internal server error");
+  }
+});
+
+async function getPlayerURLS(url) {
+  return axios
+    .get(url)
+    .then(async (response) => {
+      const parser = new xml2js.Parser();
+      const result = await parser.parseStringPromise(response.data);
+      const urls = result.urlset.url
+        .map((urlObj) => urlObj.loc[0])
+        .filter((url) => {
+          const parts = url.split("/");
+          return parts[parts.length - 3] === "roster";
+        });
+      let previousUrlParts = urls[0].split("/");
+      let uniqueUrls = [urls[0]];
+      for (let i = 1; i < urls.length; i++) {
+        let currentUrlParts = urls[i].split("/");
+        if (
+          currentUrlParts[currentUrlParts.length - 2] !==
+          previousUrlParts[previousUrlParts.length - 2]
+        ) {
+          uniqueUrls.push(urls[i]);
+        }
+        previousUrlParts = currentUrlParts;
+      }
+      return uniqueUrls;
+    })
+    .catch((error) => {
+      console.error(error);
+    });
+}
+
+async function getPlayerData(url, index, total) {
+  const response = await axios.get(url);
+  const $ = cheerio.load(response.data);
+  const playerData = {};
+  photos = [];
+
+  faceShot = $(
+    "#main-content > article > header > div.sidearm-roster-player-header-details > div.sidearm-roster-player-image > img"
+  ).attr("src");
+
+  $(
+    "#main-content > article > header > div.sidearm-roster-player-header-background > div.sidearm-roster-player-header-action-photos > div "
+  ).each((i, elem) => {
+    photos.push(
+      $(elem)
+        .find("div.sidearm-roster-player-header-action-photo > img")
+        .attr("src")
+    );
+  });
+
+  sportYear = $("#main-content > article > h2").text().split(" ");
+  playerNumber = $(
+    "#main-content > article > header > div.sidearm-roster-player-header-details > h2 > div > span.sidearm-roster-player-jersey-number"
+  ).text();
+  playerFirstName = $(
+    "#main-content > article > header > div.sidearm-roster-player-header-details > h2 > div > span.sidearm-roster-player-name > span.sidearm-roster-player-first-name"
+  ).text();
+  playerLastName = $(
+    "#main-content > article > header > div.sidearm-roster-player-header-details > h2 > div > span.sidearm-roster-player-name > span.sidearm-roster-player-last-name"
+  ).text();
+
+  playerData["Number"] = playerNumber.trim();
+  playerData["FullName"] = playerFirstName.trim() + " " + playerLastName.trim();
+  playerData["FirstName"] = playerFirstName;
+  playerData["LastName"] = playerLastName;
+  playerData["LastYearPlayed"] = sportYear[0];
+  playerData["Sport"] = sportYear[1];
+
+  $(
+    "#main-content > article > header > div.sidearm-roster-player-header-details > div.sidearm-roster-player-fields.flex.flex-item-1 > ul > li"
+  ).each((i, elem) => {
+    const parameter = $(elem).find("dl > dt").text();
+    const value = $(elem).find("dl > dd").text();
+    playerData[parameter] = value;
+  });
+
+  playerData["Face-Shot"] = faceShot;
+  playerData["Photos"] = photos;
+
+  console.log(
+    `Finished processing player ${index + 1}/${total}: ${
+      playerData["Full Name"] || url
+    }`
+  );
+
+  return playerData;
+}
+
+router.route("/updateAuburn").get(async (req, res) => {
+  try {
+    const playerURLS = await getPlayerURLS(
+      "https://auburntigers.com/sitemap.xml"
+    );
+    const playersDataPromises = playerURLS.map((url, index) =>
+      getPlayerData(url, index, playerURLS.length)
+    );
+    const playersData = await Promise.all(playersDataPromises);
+    res.json(playersData);
+  } catch (error) {
+    console.error(error);
     res.status(500).send("Internal server error");
   }
 });
