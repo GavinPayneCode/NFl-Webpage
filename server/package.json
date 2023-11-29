@@ -13,6 +13,8 @@
   "license": "ISC",
   "dependencies": {
     "axios": "^1.5.1",
+    "axios-extensions": "^3.1.6",
+    "bottleneck": "^2.19.5",
     "cheerio": "^1.0.0-rc.12",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
