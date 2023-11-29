@@ -433,6 +433,7 @@ async function getPlayerURLS(url) {
       let uniqueUrls = [urls[0]];
       for (let i = 1; i < urls.length; i++) {
         let currentUrlParts = urls[i].split("/");
+        console.log("on url: " + urls[i]);
         if (
           currentUrlParts[currentUrlParts.length - 2] !==
           previousUrlParts[previousUrlParts.length - 2]
@@ -520,6 +521,11 @@ router.route("/updateAuburn").get(async (req, res) => {
     console.error(error);
     res.status(500).send("Internal server error");
   }
+});
+
+router.route("/test").get(async (req, res) => {
+  const playerURLS = await getPlayerURLS("https://georgiadogs.com/sitemap.xml");
+  res.json(playerURLS);
 });
 
 router.route("/update").get(async (req, res) => {
