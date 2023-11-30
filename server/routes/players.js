@@ -12,7 +12,7 @@ const Bottleneck = require("bottleneck");
 const e = require("express");
 
 // Create a new limiter with a maximum of 2 concurrent requests
-const limiter = new Bottleneck({ maxConcurrent: 50 });
+const limiter = new Bottleneck({ maxConcurrent: 100 });
 
 const delay = (ms) => new Promise((res) => setTimeout(res, ms));
 
@@ -37,13 +37,11 @@ router.use((req, res, next) => {
 //route for getting the players from the database with the filter and sort parameters
 router.route("/").get(async (req, res) => {
   try {
-    const playersData = await players
-      .find(
-        { fullName: { $exists: true } },
-        { projection: { _id: 0, fullName: 1, id: 1, $ref: 1 } }
-      )
-      .toArray();
-    res.send(playersData);
+    GeorgiaLinks = req.db.collection("GeorgiaLinks");
+    const allURLs = (await GeorgiaLinks.find({}).toArray()).map(
+      (link) => link.url
+    );
+    res.send(allURLs);
   } catch (err) {
     console.error(err);
     res.status(500).send("Internal server error");
@@ -209,251 +207,220 @@ router.route("/updateArkansas").get(async (req, res) => {
   }
 });
 
-router.route("/updateAlabama").get(async (req, res) => {
-  try {
-    const browser = await puppeteer.launch({ headless: "new" });
+// router.route("/updateAlabama").get(async (req, res) => {
+//   try {
+//     const browser = await puppeteer.launch({ headless: "new" });
 
-    const page = await browser.newPage();
-    await page.setViewport({ width: 1280, height: 800 });
-    await page.goto("https://rolltide.com");
+//     const page = await browser.newPage();
+//     await page.setViewport({ width: 1280, height: 800 });
+//     await page.goto("https://rolltide.com");
 
-    const sportsURL = await page.evaluate(async () => {
-      const sportGroups = Array.from(
-        document.querySelectorAll(
-          "#aspnetForm > header > div > div > div > nav > navigation-component > div > div.c-navigation-desktop.flex-item-1 > ul > li.main-navigation-sports.c-navigation__item.c-navigation__item--level-1.c-navigation__parent.sidearm-haspopup > div > div > div.flex > ul"
-        )
-      );
-      const allSports = [];
+//     const sportsURL = await page.evaluate(async () => {
+//       const sportGroups = Array.from(
+//         document.querySelectorAll(
+//           "#aspnetForm > header > div > div > div > nav > navigation-component > div > div.c-navigation-desktop.flex-item-1 > ul > li.main-navigation-sports.c-navigation__item.c-navigation__item--level-1.c-navigation__parent.sidearm-haspopup > div > div > div.flex > ul"
+//         )
+//       );
+//       const allSports = [];
 
-      sportGroups.forEach((group) => {
-        const sports = Array.from(
-          group.querySelectorAll(
-            "li > a.c-navigation__url.c-navigation__url--level-2.c-navigation__schedule-roster-news.roster"
-          )
-        );
+//       sportGroups.forEach((group) => {
+//         const sports = Array.from(
+//           group.querySelectorAll(
+//             "li > a.c-navigation__url.c-navigation__url--level-2.c-navigation__schedule-roster-news.roster"
+//           )
+//         );
 
-        sports.forEach((sport) => {
-          allSports.push({ url: sport.href });
-        });
-      });
+//         sports.forEach((sport) => {
+//           allSports.push({ url: sport.href });
+//         });
+//       });
 
-      return allSports;
-    });
+//       return allSports;
+//     });
 
-    sportsURL.pop();
+//     sportsURL.pop();
 
-    console.log(sportsURL);
+//     console.log(sportsURL);
 
-    page.close();
+//     page.close();
 
-    const allYears = [];
+//     const allYears = [];
 
-    const limit = pLimit(6); // Limit to 6 concurrent tabs
+//     const limit = pLimit(6); // Limit to 6 concurrent tabs
 
-    const yearPromises = sportsURL.map((sport, i) =>
-      limit(async () => {
-        const page = await browser.newPage();
-        await page.goto(sport.url);
+//     const yearPromises = sportsURL.map((sport, i) =>
+//       limit(async () => {
+//         const page = await browser.newPage();
+//         await page.goto(sport.url);
 
-        const years = await page.evaluate(() => {
-          try {
-            const year = Array.from(
-              document.querySelector("#ddl_past_rosters").options
-            );
-            if (year.length === 0)
-              return [{ number: "problems", url: "problems" }];
-            allYears = [];
-            year.forEach((option) => {
-              allYears.push({ number: option.innerText, url: option.value });
-            });
-            return allYears;
-          } catch (err) {
-            console.log("Sports: ");
-          }
-        });
-        page.close();
-        try {
-          allYears.push(...years);
-        } catch (err) {
-          console.log("Sports: " + sport.url);
-        }
-      })
-    );
+//         const years = await page.evaluate(() => {
+//           try {
+//             const year = Array.from(
+//               document.querySelector("#ddl_past_rosters").options
+//             );
+//             if (year.length === 0)
+//               return [{ number: "problems", url: "problems" }];
+//             allYears = [];
+//             year.forEach((option) => {
+//               allYears.push({ number: option.innerText, url: option.value });
+//             });
+//             return allYears;
+//           } catch (err) {
+//             console.log("Sports: ");
+//           }
+//         });
+//         page.close();
+//         try {
+//           allYears.push(...years);
+//         } catch (err) {
+//           console.log("Sports: " + sport.url);
+//         }
+//       })
+//     );
 
-    let allPlayers = [];
+//     let allPlayers = [];
 
-    await Promise.all(yearPromises);
+//     await Promise.all(yearPromises);
 
-    const playerPromises = allYears.map((year, i) =>
-      limit(async () => {
-        const page = await browser.newPage();
-        await page.goto("https://rolltide.com/" + year.url + "?view=2");
+//     const playerPromises = allYears.map((year, i) =>
+//       limit(async () => {
+//         const page = await browser.newPage();
+//         await page.goto("https://rolltide.com/" + year.url + "?view=2");
 
-        const players = await page.evaluate(() => {
-          const rowElements = document.querySelectorAll(
-            "#DataTables_Table_0 > tbody > tr"
-          );
+//         const players = await page.evaluate(() => {
+//           const rowElements = document.querySelectorAll(
+//             "#DataTables_Table_0 > tbody > tr"
+//           );
 
-          const headerElements = document.querySelectorAll(
-            "#DataTables_Table_0 > thead > tr"
-          );
+//           const headerElements = document.querySelectorAll(
+//             "#DataTables_Table_0 > thead > tr"
+//           );
 
-          allHeaders = [];
-          headerElements.forEach((header) => {
-            const headers = header.querySelectorAll("th");
-            headers.forEach((header) => {
-              allHeaders.push(header.innerText);
-            });
-          });
+//           allHeaders = [];
+//           headerElements.forEach((header) => {
+//             const headers = header.querySelectorAll("th");
+//             headers.forEach((header) => {
+//               allHeaders.push(header.innerText);
+//             });
+//           });
 
-          // Create a new Set to store player identifiers
-          const playerSet = new Set();
+//           // Create a new Set to store player identifiers
+//           const playerSet = new Set();
 
-          allCells = [];
-          rowElements.forEach((row) => {
-            const cells = row.querySelectorAll("td");
-            let playerData = {};
-            cells.forEach((cell, index) => {
-              playerData[allHeaders[index].trim()] = cell.innerText.trim();
-            });
+//           allCells = [];
+//           rowElements.forEach((row) => {
+//             const cells = row.querySelectorAll("td");
+//             let playerData = {};
+//             cells.forEach((cell, index) => {
+//               playerData[allHeaders[index].trim()] = cell.innerText.trim();
+//             });
 
-            allCells.push(playerData);
-          });
-          return allCells;
-        });
-        page.close();
-        allPlayers.push(...players);
-      })
-    );
+//             allCells.push(playerData);
+//           });
+//           return allCells;
+//         });
+//         page.close();
+//         allPlayers.push(...players);
+//       })
+//     );
 
-    await Promise.all(playerPromises);
+//     await Promise.all(playerPromises);
 
-    // This code will run after all the promises have completed
-    const playerSet = new Set();
-    let noHighSchoolCount = 0;
+//     // This code will run after all the promises have completed
+//     const playerSet = new Set();
+//     let noHighSchoolCount = 0;
 
-    allPlayers = allPlayers.filter((player) => {
-      let playerId;
+//     allPlayers = allPlayers.filter((player) => {
+//       let playerId;
 
-      // Determine the high school
-      let highSchool = "";
-      let homeTownCity = "";
-      let homeTownStateOrCountry = "";
-      if (player["HOMETOWN / HIGH SCHOOL"]) {
-        const hometownHighSchool = player["HOMETOWN / HIGH SCHOOL"].split("/");
-        highSchool = hometownHighSchool[1] ? hometownHighSchool[1].trim() : "";
-        if (hometownHighSchool[0].includes(",")) {
-          homeTown = hometownHighSchool[0].split(",");
-          homeTownCity = homeTown[0].trim();
-          homeTownStateOrCountry = homeTown[1].trim();
-        }
-        if (highSchool === "") {
-          highSchool = hometownHighSchool[0].split(",")[0].trim();
-        }
-      } else if (
-        player["PREVIOUS SCHOOL"] &&
-        player["PREVIOUS SCHOOL"].includes("HS")
-      ) {
-        highSchool = player["PREVIOUS SCHOOL"];
-        if (player["HOMETOWN"]) {
-          homeTown = player["HOMETOWN"].split(",");
-          homeTownCity = homeTown[0].trim();
-          homeTownStateOrCountry = homeTown[1].trim();
-        }
-      } else if (
-        player["PREVIOUS SCHOOL"] ||
-        player["PREVIOUS SCHOOL"] === ""
-      ) {
-        hometown = player["HOMETOWN"].split(",");
-        homeTownCity = hometown[0].trim();
-        homeTownStateOrCountry = hometown[1].trim();
-        highSchool = `${homeTownCity} High School`;
-      } else if (
-        player["HOMETOWN / PREVIOUS SCHOOL"] ||
-        player["HOMETOWN/PREVIOUS SCHOOL"]
-      ) {
-        if (player["HOMETOWN / PREVIOUS SCHOOL"]) {
-          hometownPrevSchool = player["HOMETOWN / PREVIOUS SCHOOL"].split("/");
-        } else {
-          hometownPrevSchool = player["HOMETOWN/PREVIOUS SCHOOL"].split("/");
-        }
-        if (hometownPrevSchool[0].includes(",")) {
-          homeTown = hometownPrevSchool[0].split(",");
-          homeTownCity = homeTown[0].trim();
-          homeTownStateOrCountry = homeTown[1].trim();
-        }
-        if (hometownPrevSchool[1] && hometownPrevSchool[1].includes("HS")) {
-          highSchool = hometownPrevSchool[1].trim();
-        } else {
-          const hometown = hometownPrevSchool[0].split(",")[0].trim();
-          highSchool = `${hometown} High School`;
-        }
-      } else {
-        noHighSchoolCount++;
-        console.log(
-          player["FULL NAME"] +
-            " has no high school. " +
-            `No high school count: ${noHighSchoolCount}`
-        );
-      }
+//       // Determine the high school
+//       let highSchool = "";
+//       let homeTownCity = "";
+//       let homeTownStateOrCountry = "";
+//       if (player["HOMETOWN / HIGH SCHOOL"]) {
+//         const hometownHighSchool = player["HOMETOWN / HIGH SCHOOL"].split("/");
+//         highSchool = hometownHighSchool[1] ? hometownHighSchool[1].trim() : "";
+//         if (hometownHighSchool[0].includes(",")) {
+//           homeTown = hometownHighSchool[0].split(",");
+//           homeTownCity = homeTown[0].trim();
+//           homeTownStateOrCountry = homeTown[1].trim();
+//         }
+//         if (highSchool === "") {
+//           highSchool = hometownHighSchool[0].split(",")[0].trim();
+//         }
+//       } else if (
+//         player["PREVIOUS SCHOOL"] &&
+//         player["PREVIOUS SCHOOL"].includes("HS")
+//       ) {
+//         highSchool = player["PREVIOUS SCHOOL"];
+//         if (player["HOMETOWN"]) {
+//           homeTown = player["HOMETOWN"].split(",");
+//           homeTownCity = homeTown[0].trim();
+//           homeTownStateOrCountry = homeTown[1].trim();
+//         }
+//       } else if (
+//         player["PREVIOUS SCHOOL"] ||
+//         player["PREVIOUS SCHOOL"] === ""
+//       ) {
+//         hometown = player["HOMETOWN"].split(",");
+//         homeTownCity = hometown[0].trim();
+//         homeTownStateOrCountry = hometown[1].trim();
+//         highSchool = `${homeTownCity} High School`;
+//       } else if (
+//         player["HOMETOWN / PREVIOUS SCHOOL"] ||
+//         player["HOMETOWN/PREVIOUS SCHOOL"]
+//       ) {
+//         if (player["HOMETOWN / PREVIOUS SCHOOL"]) {
+//           hometownPrevSchool = player["HOMETOWN / PREVIOUS SCHOOL"].split("/");
+//         } else {
+//           hometownPrevSchool = player["HOMETOWN/PREVIOUS SCHOOL"].split("/");
+//         }
+//         if (hometownPrevSchool[0].includes(",")) {
+//           homeTown = hometownPrevSchool[0].split(",");
+//           homeTownCity = homeTown[0].trim();
+//           homeTownStateOrCountry = homeTown[1].trim();
+//         }
+//         if (hometownPrevSchool[1] && hometownPrevSchool[1].includes("HS")) {
+//           highSchool = hometownPrevSchool[1].trim();
+//         } else {
+//           const hometown = hometownPrevSchool[0].split(",")[0].trim();
+//           highSchool = `${hometown} High School`;
+//         }
+//       } else {
+//         noHighSchoolCount++;
+//         console.log(
+//           player["FULL NAME"] +
+//             " has no high school. " +
+//             `No high school count: ${noHighSchoolCount}`
+//         );
+//       }
 
-      // Add the high school to the player object
-      player["High-School"] = highSchool;
-      player["Home-Town-City"] = homeTownCity;
-      player["Home-Town-State/Country"] = homeTownStateOrCountry;
+//       // Add the high school to the player object
+//       player["High-School"] = highSchool;
+//       player["Home-Town-City"] = homeTownCity;
+//       player["Home-Town-State/Country"] = homeTownStateOrCountry;
 
-      // Use FULL NAME - Home Town as the ID
-      playerId = player["FULL NAME"] + "-" + homeTownCity;
+//       // Use FULL NAME - Home Town as the ID
+//       playerId = player["FULL NAME"] + "-" + homeTownCity;
 
-      if (!playerSet.has(playerId)) {
-        playerSet.add(playerId);
-        return true;
-      }
-      return false;
-    });
+//       if (!playerSet.has(playerId)) {
+//         playerSet.add(playerId);
+//         return true;
+//       }
+//       return false;
+//     });
 
-    browser.close();
-    alabamaPlayers = req.db.collection("Alabama");
-    await alabamaPlayers.deleteMany({});
-    await alabamaPlayers.insertMany(allPlayers);
+//     browser.close();
+//     alabamaPlayers = req.db.collection("Alabama");
+//     await alabamaPlayers.deleteMany({});
+//     await alabamaPlayers.insertMany(allPlayers);
 
-    res.json("updated Alabama players");
-  } catch (err) {
-    console.error(err);
-    res.status(500).send("Internal server error");
-  }
-});
-
-async function getPlayerURLS(url) {
-  return axios
-    .get(url)
-    .then(async (response) => {
-      const parser = new xml2js.Parser();
-      const result = await parser.parseStringPromise(response.data);
-      const urls = result.urlset.url
-        .map((urlObj) => urlObj.loc[0])
-        .filter((url) => {
-          const parts = url.split("/");
-          return parts[parts.length - 3] === "roster";
-        });
-      let previousUrlParts = urls[0].split("/");
-      let uniqueUrls = [urls[0]];
-      for (let i = 1; i < urls.length; i++) {
-        let currentUrlParts = urls[i].split("/");
-        if (
-          currentUrlParts[currentUrlParts.length - 2] !==
-          previousUrlParts[previousUrlParts.length - 2]
-        ) {
-          uniqueUrls.push(urls[i]);
-        }
-        previousUrlParts = currentUrlParts;
-      }
-      return uniqueUrls;
-    })
-    .catch((error) => {
-      console.error(error);
-    });
-}
+//     res.json("updated Alabama players");
+//   } catch (err) {
+//     console.error(err);
+//     res.status(500).send("Internal server error");
+//   }
+// });
 
 async function getPlayerData(url, index, total) {
   let response;
@@ -530,219 +497,236 @@ async function getPlayerData(url, index, total) {
   return playerData;
 }
 
+async function getAllXMLRosterLinks(url) {
+  try {
+    allLinks = await axios.get(url).then(async (response) => {
+      const parser = new xml2js.Parser();
+      const result = await parser.parseStringPromise(response.data);
+      const urls = result.urlset.url
+        .map((urlObj) => urlObj.loc[0])
+        .filter((url) => {
+          const parts = url.split("/");
+          return parts[parts.length - 3] === "roster";
+        });
+      return urls;
+    });
+
+    return allLinks;
+  } catch (err) {
+    console.log(err);
+  }
+}
+
+async function getUniqueURLS(db, allLinks) {
+  const goodURL = [];
+  const duplicateURL = [];
+  const badURL = [];
+  const allPlayerURLS = await allLinks;
+
+  const promises = allPlayerURLS.map(async (link) => {
+    let count = 0;
+    let pageData;
+    while (count < 10 && !pageData) {
+      const response = await limiter.schedule(() =>
+        axios.get(link).catch(async (err) => {
+          count++;
+          if (err.response) {
+            console.log(
+              err.response.status,
+              err.response.statusText,
+              count,
+              link
+            );
+          } else {
+            console.log("Error on link: " + link, " error: " + err);
+          }
+          if (err.response && err.response.status === 404) {
+            console.log("404 eror on link: " + link);
+            count = 10;
+          }
+          await delay(550 * count);
+        })
+      );
+      if (response) {
+        pageData = response.data;
+      }
+    }
+    if (count === 10) {
+      console.log("Error on link: " + link);
+      return;
+    }
+    const $ = cheerio.load(await pageData);
+    const title = $("head > title").text();
+    const urlParts = link.split("/");
+    const lastIndex = (await allPlayerURLS.indexOf(link)) - 1;
+    const lastURL = await allPlayerURLS[lastIndex];
+    if (!title.includes("@fullname")) {
+      if (lastURL === undefined) {
+        goodURL.push(link);
+      } else {
+        const lastParts = lastURL.split("/");
+
+        if (urlParts[urlParts.length - 2] !== lastParts[lastParts.length - 2]) {
+          goodURL.push(link);
+        } else {
+          duplicateURL.push(link);
+        }
+      }
+    } else {
+      badURL.push(link);
+    }
+  });
+
+  await Promise.all(await promises);
+
+  let newURLs = [];
+  let filteredGoodURL = [...goodURL];
+  for (const link of duplicateURL) {
+    const urlParts = link.split("/");
+    const name = urlParts[urlParts.length - 2];
+    const sport = urlParts[urlParts.length - 4];
+    const urlsWithNameAndSport = [...filteredGoodURL, ...newURLs].filter(
+      (url) => url.includes(name) && url.includes(sport)
+    );
+    if (urlsWithNameAndSport.length === 0) {
+      newURLs.push(link);
+    } else if (urlsWithNameAndSport.length > 1) {
+      // Remove all URLs containing the same name and sport from filteredGoodURL
+      filteredGoodURL = filteredGoodURL.filter(
+        (url) => !(url.includes(name) && url.includes(sport))
+      );
+    }
+  }
+
+  const allWorkingURLS = [...filteredGoodURL, ...newURLs];
+
+  const allWorkingURLSJson = allWorkingURLS.map((url) => ({ url }));
+
+  if (db !== null) {
+    await db.deleteMany({});
+    await db.insertMany(allWorkingURLSJson);
+  }
+  return allWorkingURLSJson;
+}
+
 router.route("/updateAuburn").get(async (req, res) => {
   try {
-    const playerURLS = await getPlayerURLS(
+    const AuburnLinks = req.db.collection("AuburnLinks");
+
+    const playerURLS = await getAllXMLRosterLinks(
       "https://auburntigers.com/sitemap.xml"
     );
-    const playersDataPromises = playerURLS.map((url, index) =>
-      getPlayerData(url, index, playerURLS.length)
-    );
-    playersData = await Promise.all(playersDataPromises);
 
-    // Remove any null values from the array
-    playersData = playersData.filter((data) => data !== null);
+    const allPlayerURLS = await getUniqueURLS(AuburnLinks, playerURLS);
 
-    res.json(playerURLS);
+    // const playersDataPromises = playerURLS.map((url, index) =>
+    //   getPlayerData(url, index, playerURLS.length)
+    // );
+    // playersData = await Promise.all(playersDataPromises);
+
+    // // Remove any null values from the array
+    // playersData = playersData.filter((data) => data !== null);
+
+    res.json({ message: "updated auburn players" });
   } catch (error) {
     console.error(error);
     res.status(500).send("Internal server error");
   }
 });
 
-async function getGeorgiaPlayerURLS() {
-  const playerURLS = await getPlayerURLS("https://georgiadogs.com/sitemap.xml");
-
-  const promises = playerURLS.map(async (url) => {
-    let c = 0;
-    playerPage = null;
-    while (c < 10) {
-      try {
-        const response = await axios.get(url);
-        playerPage = response.data;
-        break;
-      } catch (err) {
-        c++;
-        console.log("Error: " + err + " Error on link: " + url);
-        await delay(1000 * c);
-      }
-    }
-    const $ = cheerio.load(playerPage);
-    let goodURL = null;
-    const title = $("head > title").text();
-    if (title.includes("@fullname")) {
-      goodURL = false;
-    } else {
-      goodURL = true;
-    }
-    return { url, goodURL: goodURL };
-  });
-
-  const results = await Promise.all(promises);
-  const passed = [];
-  const nullURL = [];
-  const failed = [];
-  console.log("results promise.all");
-
-  results.forEach((result) => {
-    if (result.goodURL === true) {
-      passed.push(result.url);
-    }
-    if (result.goodURL === false) {
-      failed.push(result.url);
-    }
-    if (result.goodURL === null) {
-      nullURL.push(result.url);
-    }
-  });
-
-  const playersDuplicate = await axios
-    .get("https://georgiadogs.com/sitemap.xml")
-    .then(async (response) => {
-      const parser = new xml2js.Parser();
-      const result = await parser.parseStringPromise(response.data);
-      return result.urlset.url.map((urlObj) => urlObj.loc[0]);
-    });
-
-  nextBadName = [];
-
-  async function getNextUrl(url, playersDuplicate) {
-    const urlParts = url.split("/");
-    const urlIndex = playersDuplicate.indexOf(url);
-    if (urlIndex < playersDuplicate.length - 1) {
-      const nextUrlParts = playersDuplicate[urlIndex + 1].split("/");
-      if (
-        urlParts[urlParts.length - 2] === nextUrlParts[nextUrlParts.length - 2]
-      ) {
-        let nextUrlPage;
-        try {
-          const response = await axios.get(playersDuplicate[urlIndex + 1]);
-          nextUrlPage = response.data;
-        } catch (err) {
-          if (err.response) {
-            console.log(
-              "Error: ",
-              err.response.status,
-              err.response.statusText
-            );
-          }
-          console.log("Error on link: " + playersDuplicate[urlIndex + 1]);
-          await delay(1000);
-          return { url: playersDuplicate[urlIndex + 1], goodURL: false };
-        }
-        const $ = cheerio.load(nextUrlPage);
-        const title = $("head > title").text();
-        if (!title.includes("@fullname")) {
-          return { url: playersDuplicate[urlIndex + 1], goodURL: true };
-        } else {
-          return { url: playersDuplicate[urlIndex + 1], goodURL: false };
-        }
-      }
-      nextBadName.push({
-        thisURL: url,
-        thisName: urlParts[urlParts.length - 2],
-        nextName: nextUrlParts[nextUrlParts.length - 2],
-        nextURL: playersDuplicate[urlIndex + 1],
-      });
-      return { url: playersDuplicate[urlIndex + 1], goodURL: null };
-    }
-    return { url: playersDuplicate[urlIndex + 1], goodURL: "end of list" };
-  }
-
-  nullPlayers = [];
-
-  const failedPromises = failed.map(async (url) => {
-    let nextUrl = { url: url, goodURL: false };
-    let counter = 0;
-    while (nextUrl.goodURL === false && counter < 10) {
-      counter++;
-      nextUrl = await getNextUrl(nextUrl.url, playersDuplicate);
-      if (counter === 10) console.log("Counter: " + counter + " URL: " + url);
-    }
-    nextUrl.url = nextUrl.url.trim();
-    if (nextUrl.goodURL === null) {
-      nullPlayers.push(url);
-    }
-    return nextUrl;
-  });
-
-  promFailed = (await Promise.all(failedPromises)).filter(
-    (player) => player.url !== null
-  );
-  console.log("promFailed promise.all");
-
-  allPlayerLinks = passed.concat(promFailed.map((player) => player.url));
-
-  return allPlayerLinks;
-}
-
-async function getAllXMLRosterLinks(db, url) {
-  allLinks = await axios.get(url).then(async (response) => {
-    const parser = new xml2js.Parser();
-    const result = await parser.parseStringPromise(response.data);
-    const urls = result.urlset.url
-      .map((urlObj) => urlObj.loc[0])
-      .filter((url) => {
-        const parts = url.split("/");
-        return parts[parts.length - 3] === "roster";
-      });
-    return urls;
-  });
-  allLinks = allLinks.map((link) => {
-    return { url: link };
-  });
-
-  await db.insertMany(allLinks);
-}
-
 router.route("/updateGeorgia").get(async (req, res) => {
-  georgiaLinks = await req.db.collection("GeorgiaLinks");
   try {
-    goodURL = [];
-    const allPlayerLinks = await georgiaLinks.find().toArray({});
+    GeorgiaLinks = req.db.collection("GeorgiaLinks");
+    const allLinks = await getAllXMLRosterLinks(
+      "https://georgiadogs.com/sitemap.xml"
+    );
+    await getUniqueURLS(GeorgiaLinks, await allLinks);
+    res.json({ message: "updated georgia players" });
+  } catch (err) {
+    res.status(500).json({ message: "Error: " + err });
+  }
+});
 
-    const promises = allPlayerLinks.map(async (link) => {
-      count = 0;
-      let pageData;
-      while (count < 10) {
-        const response = await axios.get(link.url).catch(async (err) => {
-          console.log("Error: " + err + " Error on link: " + link.url);
-          count++;
-          await delay(550);
-        });
-        if (response) {
-          pageData = response.data;
-          break;
-        }
-      }
-      if (count === 10) {
-        console.log("Error on link: " + link.url);
-        return;
-      }
-      const $ = cheerio.load(await pageData);
-      const title = $("head > title").text();
-      const urlParts = link.url.split("/");
-      if (goodURL.length === 0) {
-        if (!title.includes("@fullname")) {
-          goodURL.push(link.url);
-        } else {
-          goodURL.push("/");
-        }
-      }
-      const lastParts =
-        allPlayerLinks[allPlayerLinks.indexOf(link.url) - 1].split("/");
-      console.log("orgUrl: " + link.url, " lastParts: " + lastParts);
-      if (
-        !title.includes("@fullname") &&
-        urlParts[urlParts.length - 2] !== lastParts[lastParts.length - 2]
-      ) {
-        goodURL.push(link.url);
-      }
-    });
+router.route("/updateAlabama").get(async (req, res) => {
+  try {
+    AlabamaLinks = req.db.collection("AlabamaLinks");
+    const allLinks = await getAllXMLRosterLinks(
+      "https://rolltide.com/sitemap.xml"
+    );
+    res.json(await getUniqueURLS(AlabamaLinks, await allLinks));
+  } catch (err) {
+    res.status(500).json({ message: "Error: " + err });
+  }
+});
 
-    await Promise.all(await promises);
+router.route("/updateFlorida").get(async (req, res) => {
+  try {
+    floridaLinks = req.db.collection("floridaLinks");
+    const allLinks = await getAllXMLRosterLinks(
+      "https://floridagators.com/sitemap.xml"
+    );
+    res.json(await getUniqueURLS(floridaLinks, await allLinks));
+  } catch (err) {
+    res.status(500).json({ message: "Error: " + err });
+  }
+});
 
-    res.json(await goodURL);
+router.route("/updateMississippi").get(async (req, res) => {
+  try {
+    MississippiLinks = req.db.collection("MississippiLinks");
+    const allLinks = await getAllXMLRosterLinks(
+      "https://olemisssports.com/sitemap.xml"
+    );
+    res.json(await getUniqueURLS(MississippiLinks, await allLinks));
+  } catch (err) {
+    res.status(500).json({ message: "Error: " + err });
+  }
+});
+
+router.route("/updateMississippiState").get(async (req, res) => {
+  try {
+    MississippiStateLinks = req.db.collection("MississippiStateLinks");
+    const allLinks = await getAllXMLRosterLinks(
+      "https://hailstate.com/sitemap.xml"
+    );
+    res.json(await getUniqueURLS(MississippiStateLinks, await allLinks));
+  } catch (err) {
+    res.status(500).json({ message: "Error: " + err });
+  }
+});
+
+router.route("/updateMissouri").get(async (req, res) => {
+  try {
+    MissouriLinks = req.db.collection("MissouriLinks");
+    const allLinks = await getAllXMLRosterLinks(
+      "https://mutigers.com/sitemap.xml"
+    );
+    res.json(await getUniqueURLS(MissouriLinks, await allLinks));
+  } catch (err) {
+    res.status(500).json({ message: "Error: " + err });
+  }
+});
+
+
+router.route("/updateTennessee").get(async (req, res) => {  ``
+  try {
+    TennesseeLinks = req.db.collection("TennesseeLinks");
+    const allLinks = await getAllXMLRosterLinks(
+      "https://utsports.com/sitemap.xml"
+    );
+    res.json(await getUniqueURLS(TennesseeLinks, await allLinks));
+  } catch (err) {
+    res.status(500).json({ message: "Error: " + err });
+  }
+});
+
+router.route("/updateTexasAM").get(async (req, res) => {
+  try {
+    TexasAMLinks = req.db.collection("TexasAMLinks");
+    const allLinks = await getAllXMLRosterLinks(
+      "https://12thman.com/sitemap.xml"
+    );
+    res.json(await getUniqueURLS(TexasAMLinks, await allLinks));
   } catch (err) {
     res.status(500).json({ message: "Error: " + err });
   }
