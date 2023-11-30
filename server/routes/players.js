@@ -8,7 +8,13 @@ const { start } = require("repl");
 const xml2js = require("xml2js");
 const { get } = require("http");
 const cheerio = require("cheerio");
-const Bottleneck = require('bottleneck');
+const Bottleneck = require("bottleneck");
+const e = require("express");
+
+// Create a new limiter with a maximum of 2 concurrent requests
+const limiter = new Bottleneck({ maxConcurrent: 50 });
+
+const delay = (ms) => new Promise((res) => setTimeout(res, ms));
 
 let pLimit;
 
@@ -434,7 +440,6 @@ async function getPlayerURLS(url) {
       let uniqueUrls = [urls[0]];
       for (let i = 1; i < urls.length; i++) {
         let currentUrlParts = urls[i].split("/");
-        console.log("on url: " + urls[i]);
         if (
           currentUrlParts[currentUrlParts.length - 2] !==
           previousUrlParts[previousUrlParts.length - 2]
@@ -450,29 +455,24 @@ async function getPlayerURLS(url) {
     });
 }
 
-// Create a new limiter with a maximum of 2 concurrent requests
-const limiter = new Bottleneck({ maxConcurrent: 50 });
-
-const delay = ms => new Promise(res => setTimeout(res, ms));
-
 async function getPlayerData(url, index, total) {
   let response;
 
-while (true) {
-  try {
-    response = await limiter.schedule(() => axios.get(url));
-    break; // If the request was successful, break the loop
-  } catch (error) {
-    if (error.response && (error.response.status === 500)) {
-      console.log(`Retrying ${url} in 10 seconds...`);
-      await delay(10000); // Wait for 10 seconds before retrying
-    } else {
-      message = `Failed to fetch ${url}: ${error.response.status}`
-      console.log(message);
-      return null;
+  while (true) {
+    try {
+      response = await limiter.schedule(() => axios.get(url));
+      break; // If the request was successful, break the loop
+    } catch (error) {
+      if (error.response && error.response.status === 500) {
+        console.log(`Retrying ${url} in 10 seconds...`);
+        await delay(10000); // Wait for 10 seconds before retrying
+      } else {
+        message = `Failed to fetch ${url}: ${error.response.status}`;
+        console.log(message);
+        return null;
+      }
     }
   }
-}
 
   const $ = cheerio.load(response.data);
   const playerData = {};
@@ -543,16 +543,209 @@ router.route("/updateAuburn").get(async (req, res) => {
     // Remove any null values from the array
     playersData = playersData.filter((data) => data !== null);
 
-    res.json(playersData);
+    res.json(playerURLS);
   } catch (error) {
     console.error(error);
     res.status(500).send("Internal server error");
   }
 });
 
-router.route("/test").get(async (req, res) => {
+async function getGeorgiaPlayerURLS() {
   const playerURLS = await getPlayerURLS("https://georgiadogs.com/sitemap.xml");
-  res.json(playerURLS);
+
+  const promises = playerURLS.map(async (url) => {
+    let c = 0;
+    playerPage = null;
+    while (c < 10) {
+      try {
+        const response = await axios.get(url);
+        playerPage = response.data;
+        break;
+      } catch (err) {
+        c++;
+        console.log("Error: " + err + " Error on link: " + url);
+        await delay(1000 * c);
+      }
+    }
+    const $ = cheerio.load(playerPage);
+    let goodURL = null;
+    const title = $("head > title").text();
+    if (title.includes("@fullname")) {
+      goodURL = false;
+    } else {
+      goodURL = true;
+    }
+    return { url, goodURL: goodURL };
+  });
+
+  const results = await Promise.all(promises);
+  const passed = [];
+  const nullURL = [];
+  const failed = [];
+  console.log("results promise.all");
+
+  results.forEach((result) => {
+    if (result.goodURL === true) {
+      passed.push(result.url);
+    }
+    if (result.goodURL === false) {
+      failed.push(result.url);
+    }
+    if (result.goodURL === null) {
+      nullURL.push(result.url);
+    }
+  });
+
+  const playersDuplicate = await axios
+    .get("https://georgiadogs.com/sitemap.xml")
+    .then(async (response) => {
+      const parser = new xml2js.Parser();
+      const result = await parser.parseStringPromise(response.data);
+      return result.urlset.url.map((urlObj) => urlObj.loc[0]);
+    });
+
+  nextBadName = [];
+
+  async function getNextUrl(url, playersDuplicate) {
+    const urlParts = url.split("/");
+    const urlIndex = playersDuplicate.indexOf(url);
+    if (urlIndex < playersDuplicate.length - 1) {
+      const nextUrlParts = playersDuplicate[urlIndex + 1].split("/");
+      if (
+        urlParts[urlParts.length - 2] === nextUrlParts[nextUrlParts.length - 2]
+      ) {
+        let nextUrlPage;
+        try {
+          const response = await axios.get(playersDuplicate[urlIndex + 1]);
+          nextUrlPage = response.data;
+        } catch (err) {
+          if (err.response) {
+            console.log(
+              "Error: ",
+              err.response.status,
+              err.response.statusText
+            );
+          }
+          console.log("Error on link: " + playersDuplicate[urlIndex + 1]);
+          await delay(1000);
+          return { url: playersDuplicate[urlIndex + 1], goodURL: false };
+        }
+        const $ = cheerio.load(nextUrlPage);
+        const title = $("head > title").text();
+        if (!title.includes("@fullname")) {
+          return { url: playersDuplicate[urlIndex + 1], goodURL: true };
+        } else {
+          return { url: playersDuplicate[urlIndex + 1], goodURL: false };
+        }
+      }
+      nextBadName.push({
+        thisURL: url,
+        thisName: urlParts[urlParts.length - 2],
+        nextName: nextUrlParts[nextUrlParts.length - 2],
+        nextURL: playersDuplicate[urlIndex + 1],
+      });
+      return { url: playersDuplicate[urlIndex + 1], goodURL: null };
+    }
+    return { url: playersDuplicate[urlIndex + 1], goodURL: "end of list" };
+  }
+
+  nullPlayers = [];
+
+  const failedPromises = failed.map(async (url) => {
+    let nextUrl = { url: url, goodURL: false };
+    let counter = 0;
+    while (nextUrl.goodURL === false && counter < 10) {
+      counter++;
+      nextUrl = await getNextUrl(nextUrl.url, playersDuplicate);
+      if (counter === 10) console.log("Counter: " + counter + " URL: " + url);
+    }
+    nextUrl.url = nextUrl.url.trim();
+    if (nextUrl.goodURL === null) {
+      nullPlayers.push(url);
+    }
+    return nextUrl;
+  });
+
+  promFailed = (await Promise.all(failedPromises)).filter(
+    (player) => player.url !== null
+  );
+  console.log("promFailed promise.all");
+
+  allPlayerLinks = passed.concat(promFailed.map((player) => player.url));
+
+  return allPlayerLinks;
+}
+
+async function getAllXMLRosterLinks(db, url) {
+  allLinks = await axios.get(url).then(async (response) => {
+    const parser = new xml2js.Parser();
+    const result = await parser.parseStringPromise(response.data);
+    const urls = result.urlset.url
+      .map((urlObj) => urlObj.loc[0])
+      .filter((url) => {
+        const parts = url.split("/");
+        return parts[parts.length - 3] === "roster";
+      });
+    return urls;
+  });
+  allLinks = allLinks.map((link) => {
+    return { url: link };
+  });
+
+  await db.insertMany(allLinks);
+}
+
+router.route("/updateGeorgia").get(async (req, res) => {
+  georgiaLinks = await req.db.collection("GeorgiaLinks");
+  try {
+    goodURL = [];
+    const allPlayerLinks = await georgiaLinks.find().toArray({});
+
+    const promises = allPlayerLinks.map(async (link) => {
+      count = 0;
+      let pageData;
+      while (count < 10) {
+        const response = await axios.get(link.url).catch(async (err) => {
+          console.log("Error: " + err + " Error on link: " + link.url);
+          count++;
+          await delay(550);
+        });
+        if (response) {
+          pageData = response.data;
+          break;
+        }
+      }
+      if (count === 10) {
+        console.log("Error on link: " + link.url);
+        return;
+      }
+      const $ = cheerio.load(await pageData);
+      const title = $("head > title").text();
+      const urlParts = link.url.split("/");
+      if (goodURL.length === 0) {
+        if (!title.includes("@fullname")) {
+          goodURL.push(link.url);
+        } else {
+          goodURL.push("/");
+        }
+      }
+      const lastParts =
+        allPlayerLinks[allPlayerLinks.indexOf(link.url) - 1].split("/");
+      console.log("orgUrl: " + link.url, " lastParts: " + lastParts);
+      if (
+        !title.includes("@fullname") &&
+        urlParts[urlParts.length - 2] !== lastParts[lastParts.length - 2]
+      ) {
+        goodURL.push(link.url);
+      }
+    });
+
+    await Promise.all(await promises);
+
+    res.json(await goodURL);
+  } catch (err) {
+    res.status(500).json({ message: "Error: " + err });
+  }
 });
 
 router.route("/update").get(async (req, res) => {
