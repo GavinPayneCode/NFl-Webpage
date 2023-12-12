@@ -5,7 +5,7 @@ const axios = require("axios");
 
 //base url needed to get the data
 const url =
-  "https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/athletes?";
+  "https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/athletes?limit=1000&";
 
 //function to get the data from the api
 async function getNFLLeagueData(url, page) {
@@ -23,6 +23,7 @@ async function resolve_ref(ref_data) {
       const response = await axios.get(ref_data["$ref"]);
       ref_data["playerObject"] = await response.data;
       delete ref_data["$ref"];
+      console.log(ref_data["playerObject"]["fullName"]);
     } else if (typeof ref_data[i] === "object") {
       await resolve_ref(ref_data[i]);
     }
@@ -32,15 +33,15 @@ async function resolve_ref(ref_data) {
 
 //function that loops through all the pages of the api and returns the data
 async function allPlayers(url, pages) {
-  let combinedJsonData = [];
+  let requests = [];
   for (let i = 1; i <= pages; i++) {
-    const jsonData = await getNFLLeagueData(url, i);
-    const resolvedJsonData = await resolve_ref(jsonData.items);
-    combinedJsonData = combinedJsonData.concat(resolvedJsonData);
+    const data = await getNFLLeagueData(url, i);
+    requests.push(resolve_ref(data.items));
   }
+  let combinedJsonData = await Promise.all(requests);
+  combinedJsonData = [].concat(...combinedJsonData);
   return combinedJsonData;
 }
-
 //base route for the database connection to get pass through
 //then connects to the players collection
 router.use((req, res, next) => {
@@ -55,7 +56,7 @@ router.route("/").get(async (req, res) => {
       await players
         .find(req.query.filter)
         .sort(req.query.sort)
-        .limit(2000)
+        .limit(500)
         .toArray()
     );
   } catch (err) {
@@ -95,7 +96,7 @@ router.route("/stats/:id").get(async (req, res) => {
 router.route("/update").get(async (req, res) => {
   try {
     //there is 720 pages of 25 players each with there own api
-    const updatedPlayers = await allPlayers(url, 2);
+    const updatedPlayers = await allPlayers(url, 18);
 
     //this is a bulk write operation that will update the players in the database
     const bulkOps = updatedPlayers.map((player) => ({
