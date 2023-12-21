@@ -2,67 +2,144 @@ const express = require("express");
 const router = express.Router();
 const mongoose = require("mongoose");
 const axios = require("axios");
+const Bottleneck = require("bottleneck");
 
-//base url needed to get the data
-const url =
-  "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2023?";
-
-//function to get the data from the api
-async function getNFLLeagueData(url, page) {
-  if (page === undefined) page = 1;
-  const response = await axios.get(url + "page=" + page);
-  const jsonData = await response.data;
-  return jsonData;
-}
-
-//function that gets the api's for the games this week
-async function getCurrentWeekEvents(url) {
-  const response = await getNFLLeagueData(url);
-  const eventsURL = await getNFLLeagueData(response.type.week.events.$ref);
-  return eventsURL;
-}
-
-//function that loops through the json looking for api's in the properties of $ref
-//then runs the api and replaces the $ref with the data from the api
-async function resolve_ref(ref_data) {
-  for (const i in ref_data) {
-    if (i === "$ref") {
-      const response = await axios.get(ref_data["$ref"]);
-      ref_data["gameObject"] = await response.data;
-      delete ref_data["$ref"];
-    } else if (typeof ref_data[i] === "object") {
-      await resolve_ref(ref_data[i]);
-    }
-  }
-  return ref_data;
-}
-
-//base route for the database connection to get pass through
-//then connects to the games collection
-router.use((req, res, next) => {
-  games = req.db.collection("games");
-  next();
+const limiter = new Bottleneck({
+  maxConcurrent: 200,
+  minTime: 1,
 });
 
-//route for getting the games from the database with the filter and sort parameters
+const url =
+  "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?limit=1000&dates=20230803-20240108";
+
+const gameSchema = new mongoose.Schema(
+  {
+    _id: Number,
+    week: Number,
+    date: String,
+    name: String,
+    shortName: String,
+    seasonType: Number,
+    homeTeam: {
+      team: { type: Number, ref: "Team" },
+      score: Number,
+      winner: Boolean,
+    },
+    awayTeam: {
+      team: { type: Number, ref: "Team" },
+      score: Number,
+      winner: Boolean,
+    },
+    completed: Boolean,
+    divGame: Boolean,
+    conGame: Boolean,
+  },
+  { versionKey: false }
+);
+
+const Game = mongoose.model("Game", gameSchema);
+
+async function getNFLLeagueData(url) {
+  try {
+    const response = await limiter.schedule(() => axios.get(url));
+    return response.data;
+  } catch (err) {
+    console.error(`${url} failed`);
+    throw err;
+  }
+}
+
+function createGame(gameJson) {
+  return new Game({
+    _id: gameJson["id"],
+    week: gameJson["week"]["number"],
+    date: gameJson["date"],
+    name: gameJson["name"],
+    shortName: gameJson["shortName"],
+    seasonType: gameJson["season"]["type"],
+    homeTeam: {
+      team: gameJson["competitions"][0]["competitors"][0]["id"],
+      score: gameJson["competitions"][0]["competitors"][0]["score"],
+      winner: gameJson["competitions"][0]["competitors"][0]["winner"],
+    },
+    awayTeam: {
+      team: gameJson["competitions"][0]["competitors"][1]["id"],
+      score: gameJson["competitions"][0]["competitors"][1]["score"],
+      winner: gameJson["competitions"][0]["competitors"][1]["winner"],
+    },
+    completed: gameJson["status"]["type"]["completed"],
+  });
+}
+
+async function allGames(url) {
+  try {
+    await Game.deleteMany({});
+    const data = await getNFLLeagueData(url);
+    const games = data["events"].map((gameJson) => createGame(gameJson));
+    await Game.insertMany(games);
+  } catch (err) {
+    console.error(err);
+  }
+}
+
 router.route("/").get(async (req, res) => {
   try {
-    res.json(await games.find({}).toArray());
+    const filter = req.query.filter ? JSON.parse(req.query.filter) : {};
+    const sort = req.query.sort ? JSON.parse(req.query.sort) : {};
+    const showTeam = req.query.showTeam
+      ? req.query.showTeam.replace(/,/g, " ")
+      : "";
+    const showGame = req.query.showGame
+      ? req.query.showGame.replace(/,/g, " ")
+      : "";
+    const result = await Game.find(filter)
+      .sort(sort)
+      .populate("homeTeam.team", showTeam)
+      .populate("awayTeam.team", showTeam)
+      .select(showGame);
+    res.json(result);
   } catch (err) {
     console.error(err);
     res.status(500).send("Internal server error");
   }
 });
 
-//route for updating the games in the database
-//this would need to be ran every week to get the new games
 router.route("/update").get(async (req, res) => {
   try {
-    const refEvents = await getCurrentWeekEvents(url);
-    const Events = await resolve_ref(refEvents.items);
-    games.deleteMany({});
-    games.insertMany(Events);
-    res.json("Games updated");
+    await allGames(url);
+    res.json("done");
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("Internal server error");
+  }
+});
+
+router.route("/update/divConGame").get(async (req, res) => {
+  try {
+    const games = await Game.find({ completed: true, seasonType: 2 })
+      .populate("homeTeam.team")
+      .populate("awayTeam.team");
+    const conGame = games.filter(
+      (game) => game.homeTeam.team.conference === game.awayTeam.team.conference
+    );
+    for (let game of conGame) {
+      game.conGame = true;
+      if (game.homeTeam.team.conSlug === game.awayTeam.team.conSlug) {
+        game.divGame = true;
+      }
+      await game.save();
+    }
+    res.json("done");
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("Internal server error");
+  }
+});
+
+router.route("/playOffTeams").get(async (req, res) => {
+  try {
+    const games = await Game.find({ completed: true, seasonType: 2 });
+    res.json(games);
   } catch (err) {
     console.error(err);
     res.status(500).send("Internal server error");
