@@ -37,7 +37,7 @@ async function connectToDatabase() {
 }
 
 app.get("/", (req, res) => {
-  res.json("You made it!");
+  res.send("You made it!");
 });
 
 //setting up the routes for the server

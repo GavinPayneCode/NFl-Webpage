@@ -15,7 +15,7 @@ const SideDrawer = () => {
   useEffect(() => {
     const fetchGames = async () => {
       const response = await axios.get(
-        'https://studious-broccoli-59gj5r7j7wrfv64q-8000.app.github.dev/games/?filter={"week":15}'
+        'http://127.0.0.1:8000/games/?filter={"week":16}'
       );
       setGames(response.data);
     };
@@ -36,17 +36,28 @@ const SideDrawer = () => {
       }}
     >
       <List>
-        {games.map((game) => (
-          <ListItem button key={game._id}>
-            <ListItemAvatar>
-              <Avatar src={game.homeTeam.logo} alt={game.homeTeam.name} />
-            </ListItemAvatar>
-            <ListItemText primary={game.shortName} />
-            <ListItemAvatar>
-              <Avatar src={game.awayTeam.logo} alt={game.awayTeam.name} />
-            </ListItemAvatar>
-          </ListItem>
-        ))}
+        {games.map(
+          (game) => (
+            console.log(game),
+            (
+              <ListItem button key={game._id}>
+                <ListItemAvatar>
+                  <Avatar
+                    src={game.homeTeam.team.logo}
+                    alt={game.homeTeam.name}
+                  />
+                </ListItemAvatar>
+                <ListItemText primary={game.shortName} />
+                <ListItemAvatar>
+                  <Avatar
+                    src={game.awayTeam.team.logo}
+                    alt={game.awayTeam.name}
+                  />
+                </ListItemAvatar>
+              </ListItem>
+            )
+          )
+        )}
       </List>
     </Drawer>
   );
