@@ -15,7 +15,7 @@ const SideDrawer = () => {
   useEffect(() => {
     const fetchGames = async () => {
       const response = await axios.get(
-        'http://localhost:8000/games/?filter={"week":15}'
+        'https://studious-broccoli-59gj5r7j7wrfv64q-8000.app.github.dev/games/?filter={"week":15}'
       );
       setGames(response.data);
     };

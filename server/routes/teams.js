@@ -182,14 +182,28 @@ function sweepHeadToHead(teams) {
   }
 
   if (won.length > 0 && won.length < teams.length) {
-    final.push(wildSort(won));
+    if (won.length === 1) {
+      final.push(won[0]);
+    } else {
+      wildSort(won);
+      final.push(won);
+    }
   }
   if (middle.length > 0 && middle.length < teams.length) {
-    console.log(wildSort(middle));
-    final.push(wildSort(middle));
+    if (middle.length === 1) {
+      final.push(middle[0]);
+    } else {
+      wildSort(middle);
+      final.push(middle);
+    }
   }
   if (lost.length > 0 && lost.length < teams.length) {
-    final.push(wildSort(lost));
+    if (lost.length === 1) {
+      final.push(lost[0]);
+    } else {
+      wildSort(lost);
+      final.push(lost);
+    }
   }
 
   if (final.length === 0) {
@@ -299,7 +313,7 @@ function sortedCommonGameWins(teams) {
     }
   });
 
-  return groupedTeams;
+  return groupedTeams.flat();
 }
 
 function divTie(teamA, teamB) {
@@ -331,6 +345,8 @@ function divTie(teamA, teamB) {
   return teamA;
 }
 
+[0, 1, 2, 3, 4, 5];
+
 function wildTie(teamA, teamB) {
   if (teamA.conSlug === teamB.conSlug) {
     return divTie(teamA, teamB);
@@ -350,21 +366,16 @@ function wildTie(teamA, teamB) {
   //Best won-lost-tied percentage in common games, minimum of four.
   const teamACommonWins = getCommonGameWins(teamA, teamB);
   const teamBCommonWins = getCommonGameWins(teamB, teamA);
-  if (
-    teamACommonWins !== teamBCommonWins &&
-    teamACommonWins >= 4 &&
-    teamBCommonWins >= 4
-  ) {
+  if (teamACommonWins !== teamBCommonWins) {
     return teamACommonWins > teamBCommonWins ? teamA : teamB;
   }
   // console.log(teamA, teamB, "ran out of wild tiebreakers");
   return teamA;
 }
 
-function manyWildTie(teams) {
+function manyWildTie(teams, final = []) {
   let divTeams = [];
   let tiedTeams = [];
-  const final = [];
   for (let teamA of teams) {
     if (
       teams.some((teamB) => teamB !== teamA && teamB.conSlug === teamA.conSlug)
@@ -375,21 +386,33 @@ function manyWildTie(teams) {
     }
   }
   if (divTeams.length > 0) {
-    divSort(divTeams);
-    tiedTeams.push(divTeams.shift());
+    if (divTeams.length === 1) {
+      tiedTeams.push(divTeams.shift());
+    } else {
+      divSort(divTeams);
+      tiedTeams.push(divTeams.shift());
+    }
   }
-  // console.log(tiedTeams.map((team) => team.displayName));
-  //Head-to-head sweep
-  const sweepWinner = sweepHeadToHead(tiedTeams);
+
+  if (tiedTeams.length === 1) {
+    final.push(teams.shift());
+    return final;
+  }
+
+  teams = getTopWild(tiedTeams).concat(divTeams);
+  final.push(teams.shift());
+  return manyWildTie(teams, final);
+}
+
+function getTopWild(teams) {
+  const sweepWinner = sweepHeadToHead(teams);
   if (sweepWinner) return sweepWinner;
   //Best won-lost-tied percentage in games played within the conference.
-  const confSort = sortedConferenceWins(tiedTeams);
+  const confSort = sortedConferenceWins(teams);
   if (confSort) return confSort;
   //Best won-lost-tied percentage in common games, minimum of four.
-  const comSort = sortedCommonGameWins(tiedTeams);
+  const comSort = sortedCommonGameWins(teams);
   if (comSort) return comSort;
-  // console.log(teams, "ran out of many wild tiebreakers");
-  return teams;
 }
 
 function divSort(teams) {

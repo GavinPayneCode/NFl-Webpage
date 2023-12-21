@@ -36,6 +36,10 @@ async function connectToDatabase() {
   }
 }
 
+app.get("/", (req, res) => {
+  res.json("You made it!");
+});
+
 //setting up the routes for the server
 app.use("/players", playerRouter);
 app.use("/games", gameRouter);

@@ -12,7 +12,7 @@ const PlayerCardContainer = () => {
   useEffect(() => {
     const fetchPlayers = async () => {
       try {
-        const response = await axios.get("http://localhost:8000/players/", {
+        const response = await axios.get("https://studious-broccoli-59gj5r7j7wrfv64q-8000.app.github.dev/players/", {
           params: {
             filter: JSON.stringify({ headshot: { $exists: true } }),
           },
