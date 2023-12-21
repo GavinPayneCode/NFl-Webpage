@@ -36,28 +36,17 @@ const SideDrawer = () => {
       }}
     >
       <List>
-        {games.map(
-          (game) => (
-            console.log(game),
-            (
-              <ListItem button key={game._id}>
-                <ListItemAvatar>
-                  <Avatar
-                    src={game.homeTeam.team.logo}
-                    alt={game.homeTeam.name}
-                  />
-                </ListItemAvatar>
-                <ListItemText primary={game.shortName} />
-                <ListItemAvatar>
-                  <Avatar
-                    src={game.awayTeam.team.logo}
-                    alt={game.awayTeam.name}
-                  />
-                </ListItemAvatar>
-              </ListItem>
-            )
-          )
-        )}
+        {games.map((game) => (
+          <ListItem button key={game._id}>
+            <ListItemAvatar>
+              <Avatar src={game.homeTeam.team.logo} alt={game.homeTeam.name} />
+            </ListItemAvatar>
+            <ListItemText primary={game.shortName} />
+            <ListItemAvatar>
+              <Avatar src={game.awayTeam.team.logo} alt={game.awayTeam.name} />
+            </ListItemAvatar>
+          </ListItem>
+        ))}
       </List>
     </Drawer>
   );
