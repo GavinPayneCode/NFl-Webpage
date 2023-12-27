@@ -15,7 +15,7 @@ const SideDrawer = () => {
   useEffect(() => {
     const fetchGames = async () => {
       const response = await axios.get(
-        'http://127.0.0.1:8000/games/?filter={"week":16}'
+        'http://127.0.0.1:8000/games/?filter={"week":17}'
       );
       setGames(response.data);
     };

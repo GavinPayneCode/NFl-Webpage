@@ -10,7 +10,7 @@ const limiter = new Bottleneck({
 });
 
 const url =
-  "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?limit=1000&dates=20230803-20240108";
+  "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?limit=1000&dates=20230803-20240112";
 
 const gameSchema = new mongoose.Schema(
   {

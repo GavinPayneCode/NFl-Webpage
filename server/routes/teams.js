@@ -468,7 +468,6 @@ function playoffStandings(teams) {
     const record = getRecord(team);
     return {
       ...team._doc,
-      games: record.games,
       wins: record.wins,
       losses: record.losses,
     };
